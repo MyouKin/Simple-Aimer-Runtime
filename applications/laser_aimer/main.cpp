@@ -25,7 +25,7 @@ int main() {
     std::cout << "Starting Laser Aimer Application...\n";
 
     // 1. Data Provider
-    auto provider = std::make_shared<LaserAimerProvider>(0);
+    auto provider = std::make_shared<LaserAimerProvider>();
     
     // 2. System: Just hold the TargetState since it's a single target mode for now
     class DirectSystem : public System<std::optional<TargetState>, std::optional<TargetState>> {

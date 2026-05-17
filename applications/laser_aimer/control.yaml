@@ -1,0 +1,56 @@
+%YAML:1.0
+# Laser Aimer 控制配置 (借鉴 LaserTracking-2026 / control.yaml)
+
+# === P 控制器 ===
+kp: 1.2                     # 角度P增益
+deadband_px: 1.0             # 像素死区（带回滞）
+max_angle_rate: 180.0        # 最大角速度(deg/s)
+lowpass_alpha: 0.45          # 输出低通平滑系数
+yaw_sign: -1.0               # yaw方向符号
+pitch_sign: -1.0             # pitch方向符号
+
+# === 速度前馈（只注入，不反馈） ===
+use_velocity_ff: 1
+ff_alpha: 0.25
+ff_rate_max: 150.0
+ff_dt_max_ms: 80.0
+
+# === 阻尼 ===
+use_damping: 1
+damping_source: "meas"       # meas = 测量像素速度, gimbal = 云台角速度回传
+damping_kd: 0.02             # seconds
+damping_dt_max_ms: 120.0
+
+# === 丢失目标搜索 ===
+scan_enable: 1
+scan_radius_deg: 12.0        # 画圆半径(度)
+scan_rate_hz: 0.2            # 画圆频率(Hz)
+scan_pattern: "spiral"       # circle | spiral
+scan_spacing_deg: 6.05       # 螺线圈间距(度)
+scan_speed_deg_s: 25.0       # 路径速度(度/s)
+scan_r_max_deg: 15.0         # 最大半径(度)
+scan_spiral_return: 0
+scan_k_yaw: 2.5              # 椭圆yaw比例
+scan_k_pitch: 0.75           # 椭圆pitch比例
+scan_enter_delay_ms: 180     # 进入搜索延迟(ms)
+scan_reacq_confirm_frames: 2 # 重获确认帧数
+
+# === 启动策略 ===
+startup_check_frames: 5      # 前N帧未见目标则回正
+startup_home_pitch: 0.0      # 回正pitch(deg)
+startup_home_yaw: 0.0        # 回正yaw(deg)
+startup_prep_ms: 1000        # 启动准备ms
+startup_hold_ms: 200         # 保持当前姿态ms
+startup_home_ms: 600         # 回正ms
+startup_validate_ms: 200     # 稳定校验ms
+startup_min_state_frames: 1  # 最低云台帧数
+
+# === 相机内参 (需根据实际情况标定) ===
+fx: 800.0
+fy: 800.0
+cx: 640.0
+cy: 360.0
+
+# === 同轴校准 (激光光轴与相机光轴的像素偏移) ===
+u_L: 320.0
+v_L: 240.0

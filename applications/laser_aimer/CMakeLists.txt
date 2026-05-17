@@ -10,6 +10,16 @@ set(IMGUI_DIR "${CMAKE_SOURCE_DIR}/include/imgui-1.92.8")
 find_package(OpenCV REQUIRED)
 find_package(Eigen3 REQUIRED NO_MODULE)
 
+# MindVision Camera SDK
+set(MVSDK_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/include/mvsdk/include")
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64")
+    set(MVSDK_LIB_DIR "${CMAKE_SOURCE_DIR}/include/mvsdk/lib/amd64")
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
+    set(MVSDK_LIB_DIR "${CMAKE_SOURCE_DIR}/include/mvsdk/lib/arm64")
+else()
+    message(FATAL_ERROR "Unsupported architecture: ${CMAKE_SYSTEM_PROCESSOR}")
+endif()
+
 # System specific configurations for UI/GLFW
 if(APPLE)
     find_package(PkgConfig REQUIRED)
@@ -30,6 +40,7 @@ include_directories(
     ${EIGEN3_INCLUDE_DIRS}
     ${IMGUI_DIR}
     ${IMGUI_DIR}/backends
+    ${MVSDK_INCLUDE_DIR}
 )
 
 if(APPLE)
@@ -68,10 +79,12 @@ if(APPLE)
         ${COREVIDEO_LIBRARY}
     )
 else()
+    target_link_directories(laser_aimer PRIVATE ${MVSDK_LIB_DIR})
     target_link_libraries(laser_aimer
         ${OpenCV_LIBS}
         Eigen3::Eigen
         glfw
         ${OPENGL_LIBRARIES}
+        MVSDK
     )
 endif()
