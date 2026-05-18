@@ -33,11 +33,11 @@ LaserAimerSolver::LaserAimerSolver() {
 }
 LaserAimerSolver::LaserAimerSolver(const ControlConfig& cfg, const CameraModel& cam, const Boresight& bs)
     : cfg_(cfg), cam_model_(cam), boresight_(bs) {}
-void LaserAimerSolver::setGimbalState(const GimbalState& state) { gimbal_state_ = state; }
+void LaserAimerSolver::setSelfState(const aim::SelfState& state) { self_state_ = state; }
 
-GimbalCommand LaserAimerSolver::solve(const TargetState& target,
+aim::Command LaserAimerSolver::solve(const FinalTargetState& target,
                                          const LaserAimerSystemState& /*system_state*/) {
-    GimbalCommand cmd; cmd.yaw_vel = 0.0; cmd.pitch_vel = 0.0;
+    aim::Command cmd; cmd.yaw_vel = 0.0; cmd.pitch_vel = 0.0;
     const auto steady_now = std::chrono::steady_clock::now();
     double dt_s = cfg_.ctrl_dt_nominal_ms / 1000.0;
     if (has_last_update_steady_) {
@@ -56,11 +56,11 @@ GimbalCommand LaserAimerSolver::solve(const TargetState& target,
         int hold_ms = std::max(0, cfg_.startup_hold_ms), home_ms = std::max(0, cfg_.startup_home_ms), validate_ms = std::max(0, cfg_.startup_validate_ms);
         int64_t elapsed = static_cast<int64_t>(std::chrono::duration<double, std::milli>(steady_now - startup_prep_tp_).count());
         if (elapsed < hold_ms + validate_ms + home_ms) {
-            double pc = gimbal_state_.pitch, yc = gimbal_state_.yaw;
+            double pc = self_state_.pitch, yc = self_state_.yaw;
             if (elapsed >= hold_ms + validate_ms) {
                 double ms = cfg_.max_angle_rate * dt_s;
-                pc = clamp(cfg_.startup_home_pitch, gimbal_state_.pitch - ms, gimbal_state_.pitch + ms);
-                yc = clamp(cfg_.startup_home_yaw, gimbal_state_.yaw - ms, gimbal_state_.yaw + ms);
+                pc = clamp(cfg_.startup_home_pitch, self_state_.pitch - ms, self_state_.pitch + ms);
+                yc = clamp(cfg_.startup_home_yaw, self_state_.yaw - ms, self_state_.yaw + ms);
             }
             cmd.yaw_vel = yc; cmd.pitch_vel = pc; cmd.is_absolute = true;
             last_pitch_ = pc; last_yaw_ = yc; has_last_ = true;
@@ -73,8 +73,8 @@ GimbalCommand LaserAimerSolver::solve(const TargetState& target,
         startup_frames_++; if (meas_valid) startup_has_meas_ = true;
         if (!startup_has_meas_ && startup_frames_ >= cfg_.startup_check_frames) {
             double ms = cfg_.max_angle_rate * dt_s;
-            cmd.yaw_vel = clamp(cfg_.startup_home_yaw, gimbal_state_.yaw - ms, gimbal_state_.yaw + ms);
-            cmd.pitch_vel = clamp(cfg_.startup_home_pitch, gimbal_state_.pitch - ms, gimbal_state_.pitch + ms);
+            cmd.yaw_vel = clamp(cfg_.startup_home_yaw, self_state_.yaw - ms, self_state_.yaw + ms);
+            cmd.pitch_vel = clamp(cfg_.startup_home_pitch, self_state_.pitch - ms, self_state_.pitch + ms);
             cmd.is_absolute = true; last_pitch_ = cmd.pitch_vel; last_yaw_ = cmd.yaw_vel; has_last_ = true;
             DebugContext::getInstance().setTarget2D(Vec2::Zero(), false); return cmd;
         }
@@ -82,7 +82,7 @@ GimbalCommand LaserAimerSolver::solve(const TargetState& target,
     if (!meas_valid || cam_model_.fx <= 0.0 || cam_model_.fy <= 0.0) {
         in_deadband_ = false;
         if (!lost_active_) { lost_active_ = true; lost_start_ts_ = meas_ts; reacq_count_ = 0; std::cout << "DBG lost_target\n"; }
-        double bp = has_last_ ? last_pitch_ : gimbal_state_.pitch, by = has_last_ ? last_yaw_ : gimbal_state_.yaw;
+        double bp = has_last_ ? last_pitch_ : self_state_.pitch, by = has_last_ ? last_yaw_ : self_state_.yaw;
         double pc = bp, yc = by;
         double lost_ms = static_cast<double>(meas_ts - lost_start_ts_);
         bool enter_scan = cfg_.scan_enable && (cfg_.scan_enter_delay_ms <= 0.0 || lost_ms >= cfg_.scan_enter_delay_ms);
@@ -143,7 +143,7 @@ GimbalCommand LaserAimerSolver::solve(const TargetState& target,
     }
     double dyaw = cfg_.yaw_sign * std::atan(du / cam_model_.fx) * kRadToDeg;
     double dpitch = cfg_.pitch_sign * std::atan(dv / cam_model_.fy) * kRadToDeg;
-    double yc = gimbal_state_.yaw + cfg_.kp * dyaw, pc = gimbal_state_.pitch + cfg_.kp * dpitch;
+    double yc = self_state_.yaw + cfg_.kp * dyaw, pc = self_state_.pitch + cfg_.kp * dpitch;
     if (cfg_.use_damping && cfg_.damping_kd > 0.0 && has_last_meas_) {
         double dms = static_cast<double>(meas_ts - last_meas_ts_);
         if (dms > 0.0 && dms <= cfg_.damping_dt_max_ms) {

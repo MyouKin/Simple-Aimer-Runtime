@@ -20,12 +20,6 @@ namespace aim {
 template <typename InputType, typename SystemStateType>
 class Runtime {
 public:
-    /// @param provider  数据源（相机、传感器等）
-    /// @param system    系统状态维护（目标跟踪 + 云台状态）
-    /// @param selector  从系统状态中选出单一目标
-    /// @param solver    控制指令解算器（可访问目标 + 系统全量状态）
-    /// @param actuator  指令发送 + 云台状态回读（可选，nullptr 则跳过反馈）
-    /// @param loop_rate_hz 管道循环频率（Hz），默认 100
     Runtime(std::shared_ptr<DataProvider<InputType>> provider,
             std::shared_ptr<System<InputType, SystemStateType>> system,
             std::shared_ptr<Selector<SystemStateType>> selector,
@@ -83,10 +77,8 @@ private:
 
             // ---- 3. 目标选择 ----
             const auto& state = system_->getState();
-            TargetState target = selector_->select(state);
-
-            // ---- 4. 控制指令解算（Solver 可同时访问 target 和 system_state） ----
-            GimbalCommand cmd = solver_->solve(target, state);
+            FinalTargetState target = selector_->select(state);
+            Command cmd = solver_->solve(target, state);
 
             // ---- 5. 发送指令到硬件 ----
             if (actuator_) {
@@ -95,7 +87,7 @@ private:
                 // ---- 6. 读取云台反馈，回写 System ----
                 auto feedback = actuator_->feedback();
                 if (feedback.has_value()) {
-                    system_->updateGimbalState(*feedback);
+                    system_->updateSelfState(*feedback);
                 }
             }
 

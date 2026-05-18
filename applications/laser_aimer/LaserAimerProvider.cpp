@@ -105,7 +105,7 @@ struct LightStrip {
     cv::Point2f secondary_vec;
 };
 
-bool LaserAimerProvider::fetch(std::optional<TargetState>& out_data) {
+bool LaserAimerProvider::fetch(std::optional<aim::FinalTargetState>& out_data) {
     if (h_camera_ < 0) {
         out_data = std::nullopt;
         return false;
@@ -231,7 +231,7 @@ bool LaserAimerProvider::fetch(std::optional<TargetState>& out_data) {
             double norm = cv::norm(avg_secondary);
             if (norm > 0) avg_secondary /= norm;
 
-            TargetState target;
+            aim::FinalTargetState target;
             target.has_image_point = true;
             cv::Point2f target_center = (s1.center + s2.center) * 0.5f;
             target.image_point = Vec2(target_center.x, target_center.y);

@@ -10,12 +10,12 @@
 
 namespace aim {
 
-class LaserAimerProvider : public DataProvider<std::optional<TargetState>> {
+class LaserAimerProvider : public DataProvider<std::optional<aim::FinalTargetState>> {
 public:
     LaserAimerProvider();
     ~LaserAimerProvider() override;
 
-    bool fetch(std::optional<TargetState>& out_data) override;
+    bool fetch(std::optional<aim::FinalTargetState>& out_data) override;
 
 private:
     // MindVision 相机句柄与缓冲区

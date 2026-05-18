@@ -57,17 +57,17 @@ struct Boresight {
     double u_L = 320.0, v_L = 240.0;
 };
 
-// SystemStateType for laser_aimer: just an optional TargetState (single-target, no tracking history)
-using LaserAimerSystemState = std::optional<TargetState>;
+// SystemStateType for laser_aimer: just an optional FinalTargetState (single-target, no tracking history)
+using LaserAimerSystemState = std::optional<aim::FinalTargetState>;
 
-class LaserAimerSolver : public Solver<LaserAimerSystemState> {
+class LaserAimerSolver : public aim::Solver<LaserAimerSystemState> {
 public:
     LaserAimerSolver();
     explicit LaserAimerSolver(const ControlConfig& cfg,
                               const CameraModel& cam,
                               const Boresight& bs);
 
-    GimbalCommand solve(const TargetState& target,
+    aim::Command solve(const aim::FinalTargetState& target,
                         const LaserAimerSystemState& system_state) override;
 
     static bool loadConfig(const std::string& path,
@@ -75,8 +75,8 @@ public:
                            CameraModel* cam,
                            Boresight* bs);
 
-    void setGimbalState(const GimbalState& state);
-    const GimbalState& gimbalState() const { return gimbal_state_; }
+    void setSelfState(const aim::SelfState& state);
+    const aim::SelfState& selfState() const { return self_state_; }
     double deadbandStatus() const { return in_deadband_ ? 1.0 : 0.0; }
     bool isScanning() const { return scanning_; }
 
@@ -84,7 +84,7 @@ private:
     ControlConfig cfg_;
     CameraModel cam_model_;
     Boresight boresight_;
-    GimbalState gimbal_state_;
+    aim::SelfState self_state_;
 
     double last_pitch_ = 0.0, last_yaw_ = 0.0;
     bool has_last_ = false;
