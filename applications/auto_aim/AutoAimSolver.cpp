@@ -16,10 +16,16 @@
 /// 直觉：当云台能紧密跟踪目标预测轨迹时（误差小于阈值），可以开火。
 
 #include "AutoAimSolver.hpp"
-#include <opencv2/opencv.hpp>
 #include <cmath>
 #include <algorithm>
+#include <sstream>
 #include <stdexcept>
+
+#ifdef HAS_YAML_CPP
+#include <yaml-cpp/yaml.h>
+#else
+#include <opencv2/opencv.hpp>
+#endif
 
 namespace {
 
@@ -32,6 +38,24 @@ inline double limit_rad(double a) {
   return a;
 }
 
+#ifdef HAS_YAML_CPP
+/// @brief 从 yaml 节点读取向量，支持序列 [a, b, c] 或字符串 "a, b, c"
+template <int N>
+Eigen::Matrix<double, N, 1> read_vector(const YAML::Node & node) {
+  Eigen::Matrix<double, N, 1> v = Eigen::Matrix<double, N, 1>::Zero();
+  if (!node) return v;
+  if (node.IsSequence()) {
+    for (int i = 0; i < N && i < (int)node.size(); ++i) v(i) = node[i].as<double>();
+  } else {
+    std::string str = node.as<std::string>();
+    std::replace(str.begin(), str.end(), ',', ' ');
+    std::istringstream iss(str);
+    for (int i = 0; i < N; ++i) iss >> v(i);
+  }
+  return v;
+}
+#endif
+
 }  // anonymous namespace
 
 namespace auto_aim {
@@ -41,8 +65,16 @@ namespace auto_aim {
 // ============================================================================
 
 AutoAimSolver::AutoAimSolver(const std::string & config_path) {
+#ifdef HAS_YAML_CPP
+  auto yaml = YAML::LoadFile(config_path);
+  if (yaml["yaw_offset"])   yaw_offset_   = yaml["yaw_offset"].as<double>() / 57.3;
+  if (yaml["pitch_offset"]) pitch_offset_ = yaml["pitch_offset"].as<double>() / 57.3;
+  if (yaml["fire_thresh"])  fire_thresh_  = yaml["fire_thresh"].as<double>();
+  if (yaml["decision_speed"]) decision_speed_ = yaml["decision_speed"].as<double>();
+  if (yaml["high_speed_delay_time"]) high_speed_delay_time_ = yaml["high_speed_delay_time"].as<double>();
+  if (yaml["low_speed_delay_time"])  low_speed_delay_time_  = yaml["low_speed_delay_time"].as<double>();
+#else
   cv::FileStorage fs(config_path, cv::FileStorage::READ);
-
   if (fs.isOpened()) {
     double yoff = 0, poff = 0;
     fs["yaw_offset"]   >> yoff;  yaw_offset_   = yoff / 57.3;
@@ -53,16 +85,24 @@ AutoAimSolver::AutoAimSolver(const std::string & config_path) {
     fs["low_speed_delay_time"]  >> low_speed_delay_time_;
     fs.release();
   }
+#endif
 
   setup_yaw_solver(config_path);
   setup_pitch_solver(config_path);
 }
 
 void AutoAimSolver::setup_yaw_solver(const std::string & config_path) {
-  cv::FileStorage fs(config_path, cv::FileStorage::READ);
-  double max_yaw_acc = 50.0;   // rad/s²
+  double max_yaw_acc = 50.0;
   Eigen::Vector2d Q_yaw(1.0, 0.1);
   Eigen::VectorXd R_yaw(1); R_yaw << 0.01;
+
+#ifdef HAS_YAML_CPP
+  auto yaml = YAML::LoadFile(config_path);
+  if (yaml["max_yaw_acc"]) max_yaw_acc = yaml["max_yaw_acc"].as<double>();
+  if (yaml["Q_yaw"])       Q_yaw = read_vector<2>(yaml["Q_yaw"]);
+  if (yaml["R_yaw"])       R_yaw = read_vector<1>(yaml["R_yaw"]);
+#else
+  cv::FileStorage fs(config_path, cv::FileStorage::READ);
   if (fs.isOpened()) {
     fs["max_yaw_acc"] >> max_yaw_acc;
     cv::FileNode qn = fs["Q_yaw"];
@@ -71,16 +111,24 @@ void AutoAimSolver::setup_yaw_solver(const std::string & config_path) {
     if (!rn.empty()) R_yaw(0) = rn[0];
     fs.release();
   }
+#endif
 
   yaw_solver_ = std::make_unique<aim::tools::TinyMPCSolver>(MPC_DT, MPC_HORIZON);
   yaw_solver_->setup(max_yaw_acc, Q_yaw, R_yaw);
 }
 
 void AutoAimSolver::setup_pitch_solver(const std::string & config_path) {
-  cv::FileStorage fs(config_path, cv::FileStorage::READ);
   double max_pitch_acc = 30.0;
   Eigen::Vector2d Q_pitch(1.0, 0.1);
   Eigen::VectorXd R_pitch(1); R_pitch << 0.01;
+
+#ifdef HAS_YAML_CPP
+  auto yaml = YAML::LoadFile(config_path);
+  if (yaml["max_pitch_acc"]) max_pitch_acc = yaml["max_pitch_acc"].as<double>();
+  if (yaml["Q_pitch"])       Q_pitch = read_vector<2>(yaml["Q_pitch"]);
+  if (yaml["R_pitch"])       R_pitch = read_vector<1>(yaml["R_pitch"]);
+#else
+  cv::FileStorage fs(config_path, cv::FileStorage::READ);
   if (fs.isOpened()) {
     fs["max_pitch_acc"] >> max_pitch_acc;
     cv::FileNode qn = fs["Q_pitch"];
@@ -89,6 +137,7 @@ void AutoAimSolver::setup_pitch_solver(const std::string & config_path) {
     if (!rn.empty()) R_pitch(0) = rn[0];
     fs.release();
   }
+#endif
 
   pitch_solver_ = std::make_unique<aim::tools::TinyMPCSolver>(MPC_DT, MPC_HORIZON);
   pitch_solver_->setup(max_pitch_acc, Q_pitch, R_pitch);

@@ -9,7 +9,7 @@
 
 #include "../../include/runtime/Runtime.hpp"
 #include "GimbalActuator.hpp"
-#include "AutoAimProvider.hpp"
+#include "AutoAimProvider/AutoAimProvider.hpp"
 #include "AutoAimSystem.hpp"
 #include "AutoAimSelector.hpp"
 #include "AutoAimSolver.hpp"

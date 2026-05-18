@@ -11,6 +11,20 @@ set(RUNTIME_INCLUDE "${CMAKE_SOURCE_DIR}/include")
 find_package(OpenCV REQUIRED)
 find_package(Eigen3 REQUIRED NO_MODULE)
 
+# OpenVINO（分类器使用，来源: spr_vision_try 的 classifier.cpp）
+find_package(OpenVINO QUIET)
+if(NOT OpenVINO_FOUND)
+    # 尝试 conda 环境
+    if(DEFINED ENV{CONDA_PREFIX})
+        set(OpenVINO_DIR "$ENV{CONDA_PREFIX}/runtime/cmake")
+        find_package(OpenVINO QUIET)
+    endif()
+endif()
+if(NOT OpenVINO_FOUND)
+    message(WARNING "AutoAim: OpenVINO not found — classifier will fail to link. "
+                    "Install from https://docs.openvino.ai/")
+endif()
+
 # System specific for GLFW
 if(APPLE)
     find_package(PkgConfig REQUIRED)
@@ -23,6 +37,22 @@ else()
     find_package(OpenGL REQUIRED)
     find_package(glfw3 REQUIRED)
 endif()
+
+# ---- SPDLOG（日志库，MindVision/HikRobot 驱动依赖） ----
+find_package(spdlog QUIET)
+if(NOT spdlog_FOUND)
+    if(DEFINED ENV{CONDA_PREFIX})
+        set(spdlog_DIR "$ENV{CONDA_PREFIX}/share/spdlog")
+        find_package(spdlog QUIET)
+    endif()
+endif()
+if(NOT spdlog_FOUND)
+    message(WARNING "AutoAim: spdlog not found — camera logger will fail to link. "
+                    "Install with: sudo apt install libspdlog-dev  or  conda install spdlog")
+endif()
+
+# 启用 yaml-cpp 配置加载（AutoAimSystem / AutoAimSolver 通过此宏选择解析器）
+add_definitions(-DHAS_YAML_CPP)
 
 # ---- YAML-CPP（用于配置加载） ----
 find_package(yaml-cpp QUIET)
@@ -41,6 +71,10 @@ if(NOT yaml-cpp_FOUND AND NOT YAMLCPP_FOUND)
     endif()
 endif()
 
+# ---- AutoAimProvider 相关路径（相机驱动 io + tools） ----
+set(AUTO_AIM_DIR "${CMAKE_SOURCE_DIR}/applications/auto_aim")
+set(PROVIDER_DIR "${AUTO_AIM_DIR}/AutoAimProvider")
+
 # ---- include 目录 ----
 include_directories(
     ${RUNTIME_INCLUDE}
@@ -48,6 +82,9 @@ include_directories(
     ${EIGEN3_INCLUDE_DIRS}
     ${IMGUI_DIR}
     ${IMGUI_DIR}/backends
+    ${PROVIDER_DIR}                                    # for AutoAimProvider/io/camera.hpp etc.
+    ${PROVIDER_DIR}/io/mindvision/include               # for CameraApi.h (MindVision SDK)
+    ${PROVIDER_DIR}/io/hikrobot/include                 # for MvCameraControl.h (HikRobot SDK)
 )
 
 # ---- TinyMPC（可选） ----
@@ -70,6 +107,27 @@ endif()
 # ---- 源文件 ----
 file(GLOB APP_SOURCES "*.cpp")
 
+# AutoAimProvider（相机驱动 + 检测器 + 分类器）
+file(GLOB PROVIDER_SOURCES
+    "${PROVIDER_DIR}/AutoAimProvider.cpp"
+    "${PROVIDER_DIR}/detector.cpp"
+    "${PROVIDER_DIR}/classifier.cpp"
+)
+
+# AutoAimProvider 相机驱动（io: camera + mindvision + hikrobot）
+file(GLOB PROVIDER_IO_SOURCES
+    "${PROVIDER_DIR}/io/camera.cpp"
+    "${PROVIDER_DIR}/io/mindvision/mindvision.cpp"
+    "${PROVIDER_DIR}/io/hikrobot/hikrobot.cpp"
+)
+
+# AutoAimProvider 共享工具（logger / img_tools / math_tools 等）
+file(GLOB PROVIDER_TOOLS_SOURCES
+    "${PROVIDER_DIR}/tools/logger.cpp"
+    "${PROVIDER_DIR}/tools/math_tools.cpp"
+    "${PROVIDER_DIR}/tools/img_tools.cpp"
+)
+
 # Runtime 共享工具（EKF、弹道、MPC 等）
 file(GLOB TOOLS_SOURCES
     "${CMAKE_SOURCE_DIR}/src/tools/*.cpp"
@@ -90,12 +148,27 @@ file(GLOB IMGUI_SOURCES
     "${IMGUI_DIR}/backends/imgui_impl_opengl3.cpp"
 )
 
-add_executable(auto_aim ${APP_SOURCES} ${TOOLS_SOURCES} ${DEBUG_SOURCES} ${IMGUI_SOURCES})
+add_executable(auto_aim ${APP_SOURCES} ${PROVIDER_SOURCES} ${PROVIDER_IO_SOURCES} ${PROVIDER_TOOLS_SOURCES} ${TOOLS_SOURCES} ${DEBUG_SOURCES} ${IMGUI_SOURCES})
 target_compile_definitions(auto_aim PRIVATE GL_SILENCE_DEPRECATION)
 
 # ---- 链接 ----
+# ---- MindVision / HikRobot SDK 库路径（根据架构） ----
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64")
+    set(MINDVISION_LIB_DIR "${PROVIDER_DIR}/io/mindvision/lib/amd64")
+    set(HIKROBOT_LIB_DIR "${PROVIDER_DIR}/io/hikrobot/lib/amd64")
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
+    set(MINDVISION_LIB_DIR "${PROVIDER_DIR}/io/mindvision/lib/arm64")
+    set(HIKROBOT_LIB_DIR "${PROVIDER_DIR}/io/hikrobot/lib/arm64")
+else()
+    message(WARNING "Unknown architecture, mindvision/hikrobot libs may not link!")
+endif()
+
 if(APPLE)
-    target_link_directories(auto_aim PRIVATE ${GLFW3_LIBRARY_DIRS})
+    target_link_directories(auto_aim PRIVATE
+        ${GLFW3_LIBRARY_DIRS}
+        ${MINDVISION_LIB_DIR}
+        ${HIKROBOT_LIB_DIR}
+    )
     target_link_libraries(auto_aim
         ${OpenCV_LIBS}
         Eigen3::Eigen
@@ -104,13 +177,32 @@ if(APPLE)
         ${OPENGL_LIBRARY}
         ${IOKIT_LIBRARY}
         ${COREVIDEO_LIBRARY}
+        MVSDK
+        MvCameraControl
+        usb-1.0
+        spdlog
+        fmt
+        openvino        # OpenVINO runtime (classifier)
+        pthread
     )
 else()
+    target_link_directories(auto_aim PRIVATE
+        ${MINDVISION_LIB_DIR}
+        ${HIKROBOT_LIB_DIR}
+    )
+
     target_link_libraries(auto_aim
         ${OpenCV_LIBS}
         Eigen3::Eigen
         glfw
         ${OPENGL_LIBRARIES}
+        MVSDK            # MindVision SDK
+        MvCameraControl  # HikRobot SDK
+        usb-1.0          # libusb
+        spdlog           # 日志
+        fmt              # spdlog 依赖的格式化库
+        openvino         # OpenVINO runtime (classifier)
+        pthread          # 线程
     )
 endif()
 
