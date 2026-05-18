@@ -56,6 +56,16 @@ struct GimbalCommand {
     bool is_absolute = false; // 是否是绝对角度控制
 };
 
+// 云台自身状态 — 用于 MPC 等需要知道当前执行器状态的控制器
+struct GimbalState {
+    TimePoint timestamp;
+    double yaw = 0.0;
+    double pitch = 0.0;
+    double yaw_vel = 0.0;
+    double pitch_vel = 0.0;
+    bool valid = false;       // 是否有有效反馈
+};
+
 } // namespace aim
 
 #endif // AIM_FRAMEWORK_CORE_TYPES_HPP

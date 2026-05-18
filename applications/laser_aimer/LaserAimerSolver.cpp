@@ -35,7 +35,8 @@ LaserAimerSolver::LaserAimerSolver(const ControlConfig& cfg, const CameraModel& 
     : cfg_(cfg), cam_model_(cam), boresight_(bs) {}
 void LaserAimerSolver::setGimbalState(const GimbalState& state) { gimbal_state_ = state; }
 
-GimbalCommand LaserAimerSolver::solve(const TargetState& target) {
+GimbalCommand LaserAimerSolver::solve(const TargetState& target,
+                                         const LaserAimerSystemState& /*system_state*/) {
     GimbalCommand cmd; cmd.yaw_vel = 0.0; cmd.pitch_vel = 0.0;
     const auto steady_now = std::chrono::steady_clock::now();
     double dt_s = cfg_.ctrl_dt_nominal_ms / 1000.0;

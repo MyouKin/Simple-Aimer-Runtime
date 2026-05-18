@@ -5,6 +5,8 @@
 #include "../pipeline/System.hpp"
 #include "../pipeline/Selector.hpp"
 #include "../pipeline/Solver.hpp"
+#include "../pipeline/Actuator.hpp"
+#include "../core/FrameTimer.hpp"
 #include "../debug/ImGuiDebugger.hpp"
 
 #include <memory>
@@ -18,11 +20,25 @@ namespace aim {
 template <typename InputType, typename SystemStateType>
 class Runtime {
 public:
+    /// @param provider  数据源（相机、传感器等）
+    /// @param system    系统状态维护（目标跟踪 + 云台状态）
+    /// @param selector  从系统状态中选出单一目标
+    /// @param solver    控制指令解算器（可访问目标 + 系统全量状态）
+    /// @param actuator  指令发送 + 云台状态回读（可选，nullptr 则跳过反馈）
+    /// @param loop_rate_hz 管道循环频率（Hz），默认 100
     Runtime(std::shared_ptr<DataProvider<InputType>> provider,
             std::shared_ptr<System<InputType, SystemStateType>> system,
             std::shared_ptr<Selector<SystemStateType>> selector,
-            std::shared_ptr<Solver> solver)
-        : provider_(provider), system_(system), selector_(selector), solver_(solver), running_(false) {}
+            std::shared_ptr<Solver<SystemStateType>> solver,
+            std::shared_ptr<Actuator> actuator = nullptr,
+            double loop_rate_hz = 100.0)
+        : provider_(std::move(provider))
+        , system_(std::move(system))
+        , selector_(std::move(selector))
+        , solver_(std::move(solver))
+        , actuator_(std::move(actuator))
+        , loop_period_ms_(loop_rate_hz > 0.0 ? (1000.0 / loop_rate_hz) : 10.0)
+        , running_(false) {}
 
     ~Runtime() {
         stop();
@@ -31,10 +47,7 @@ public:
     void start() {
         if (running_) return;
         running_ = true;
-        
-        // Start UI in main thread if needed, or start pipeline in a background thread.
-        // For simplicity and to allow ImGui to run in the main thread (which is often required by OS like macOS),
-        // we run the pipeline in a background thread and let the caller run ImGui in the main thread.
+
         pipeline_thread_ = std::thread(&Runtime::pipelineLoop, this);
     }
 
@@ -46,31 +59,53 @@ public:
     }
 
     void runUI() {
-        // Run ImGui loop in the current thread (usually main thread)
         debugger_.run();
     }
 
+    /// @brief 获取平滑后的帧间隔（秒），可用于外部监控
+    double frameDt() const { return frame_timer_.dt(); }
+
 private:
     void pipelineLoop() {
-        while (running_) {
-            auto start_time = std::chrono::high_resolution_clock::now();
+        frame_timer_.reset();
 
+        while (running_) {
+            double dt = frame_timer_.tick();
+
+            // ---- 1. 数据采集 ----
             InputType input;
-            if (provider_->fetch(input)) {
+            bool has_input = provider_->fetch(input);
+
+            if (has_input) {
+                // ---- 2. 系统状态更新（消化新数据） ----
                 system_->update(input);
             }
 
+            // ---- 3. 目标选择 ----
             const auto& state = system_->getState();
             TargetState target = selector_->select(state);
-            GimbalCommand cmd = solver_->solve(target);
 
-            // In a real application, you would send `cmd` to the hardware here.
+            // ---- 4. 控制指令解算（Solver 可同时访问 target 和 system_state） ----
+            GimbalCommand cmd = solver_->solve(target, state);
 
-            // Sleep to maintain loop rate (e.g., 100 Hz = 10 ms)
-            auto end_time = std::chrono::high_resolution_clock::now();
-            auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
-            if (duration.count() < 10) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(10 - duration.count()));
+            // ---- 5. 发送指令到硬件 ----
+            if (actuator_) {
+                actuator_->send(cmd);
+
+                // ---- 6. 读取云台反馈，回写 System ----
+                auto feedback = actuator_->feedback();
+                if (feedback.has_value()) {
+                    system_->updateGimbalState(*feedback);
+                }
+            }
+
+            // ---- 7. 帧率控制 ----
+            auto elapsed = std::chrono::duration<double, std::milli>(
+                std::chrono::high_resolution_clock::now() - frame_timer_.lastTickPoint()).count();
+            double remaining_ms = loop_period_ms_ - elapsed;
+            if (remaining_ms > 0.5) {
+                std::this_thread::sleep_for(
+                    std::chrono::microseconds(static_cast<long long>(remaining_ms * 1000.0)));
             }
         }
     }
@@ -78,11 +113,14 @@ private:
     std::shared_ptr<DataProvider<InputType>> provider_;
     std::shared_ptr<System<InputType, SystemStateType>> system_;
     std::shared_ptr<Selector<SystemStateType>> selector_;
-    std::shared_ptr<Solver> solver_;
+    std::shared_ptr<Solver<SystemStateType>> solver_;
+    std::shared_ptr<Actuator> actuator_;
 
+    double loop_period_ms_;
     std::atomic<bool> running_;
     std::thread pipeline_thread_;
     ImGuiDebugger debugger_;
+    FrameTimer frame_timer_;
 };
 
 } // namespace aim

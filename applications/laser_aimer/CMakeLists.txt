@@ -12,9 +12,9 @@ find_package(Eigen3 REQUIRED NO_MODULE)
 
 # MindVision Camera SDK
 set(MVSDK_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/include/mvsdk/include")
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64")
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|amd64")
     set(MVSDK_LIB_DIR "${CMAKE_SOURCE_DIR}/include/mvsdk/lib/amd64")
-elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
     set(MVSDK_LIB_DIR "${CMAKE_SOURCE_DIR}/include/mvsdk/lib/arm64")
 else()
     message(FATAL_ERROR "Unsupported architecture: ${CMAKE_SYSTEM_PROCESSOR}")

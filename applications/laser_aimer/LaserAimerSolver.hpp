@@ -57,19 +57,18 @@ struct Boresight {
     double u_L = 320.0, v_L = 240.0;
 };
 
-struct GimbalState {
-    double pitch = 0.0, yaw = 0.0;
-    double pitch_rate = 0.0, yaw_rate = 0.0;
-};
+// SystemStateType for laser_aimer: just an optional TargetState (single-target, no tracking history)
+using LaserAimerSystemState = std::optional<TargetState>;
 
-class LaserAimerSolver : public Solver {
+class LaserAimerSolver : public Solver<LaserAimerSystemState> {
 public:
     LaserAimerSolver();
     explicit LaserAimerSolver(const ControlConfig& cfg,
                               const CameraModel& cam,
                               const Boresight& bs);
 
-    GimbalCommand solve(const TargetState& target) override;
+    GimbalCommand solve(const TargetState& target,
+                        const LaserAimerSystemState& system_state) override;
 
     static bool loadConfig(const std::string& path,
                            ControlConfig* cfg,
