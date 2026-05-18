@@ -15,6 +15,8 @@
 #include "../types.hpp"
 
 #include "detector.hpp"
+#include "pnp_solver.hpp"
+#include "yolo.hpp"
 
 #include <opencv2/opencv.hpp>
 #include <memory>
@@ -45,7 +47,9 @@ private:
   std::chrono::steady_clock::time_point last_timestamp_;
 
   std::unique_ptr<io::Camera> camera_;
-  std::unique_ptr<Detector> detector_;
+  std::unique_ptr<Detector>  detector_;
+  std::unique_ptr<YOLO>      yolo_;
+  std::unique_ptr<PnPSolver> pnp_solver_;
 };
 
 }  // namespace auto_aim

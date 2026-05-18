@@ -13,6 +13,7 @@
 #include "../../include/tools/extended_kalman_filter.hpp"
 #include "types.hpp"
 
+#include <opencv2/opencv.hpp>
 #include <string>
 
 namespace auto_aim {
@@ -45,6 +46,14 @@ private:
   int max_temp_lost_count_;
   int outpost_max_temp_lost_count_;
   int normal_temp_lost_count_;
+
+  // ---- EKF 调试可视化 ---- 
+  cv::Mat debug_camera_matrix_;
+  cv::Mat debug_distort_coeffs_;
+  Eigen::Matrix3d debug_R_camera2gimbal_ = Eigen::Matrix3d::Identity();
+  Eigen::Vector3d debug_t_camera2gimbal_ = Eigen::Vector3d::Zero();
+  Eigen::Matrix3d debug_R_gimbal2world_  = Eigen::Matrix3d::Identity();
+  cv::Mat last_raw_frame_;
 
   // ========================================================================
   // 移植自 Target 的方法（EKF 预测/更新）
@@ -90,6 +99,12 @@ private:
 
   /// @brief 同步 EKF 内部状态 → state_（每次 predict/update 后调用）
   void sync_state_from_ekf();
+
+  /// @brief 将 EKF 预测的全部 N 块装甲板重投影到图像上，推送到 DebugContext("EKF")
+  void push_ekf_debug_image();
+
+  /// @brief 从 EKF 状态获取全部装甲板的 [x, y, z, yaw] 列表（调试用）
+  std::vector<Eigen::Vector4d> ekf_armor_xyza_list() const;
 };
 
 }  // namespace auto_aim

@@ -26,6 +26,10 @@ Detector::Detector(const std::string & config_path, bool debug)
   max_side_ratio_ = yaml["max_side_ratio"].as<double>();
   min_confidence_ = yaml["min_confidence"].as<double>();
   max_rectangular_error_ = yaml["max_rectangular_error"].as<double>() / 57.3;  // degree to rad
+  use_traditional_ = yaml["use_traditional"] ? yaml["use_traditional"].as<bool>() : true;
+
+  tools::logger()->info(
+    "[Detector] use_traditional={}", use_traditional_);
 
   save_path_ = "patterns";
   std::filesystem::create_directory(save_path_);
@@ -33,6 +37,13 @@ Detector::Detector(const std::string & config_path, bool debug)
 
 std::list<Armor> Detector::detect(const cv::Mat & bgr_img, int frame_count)
 {
+  // 神经网络模式（默认）— 暂未接入 YOLO，返回空
+  // 接入后可调用 yolo.detect(bgr_img) 获得 ArmorList
+  if (!use_traditional_) {
+    return {};
+  }
+
+  // 传统方法：HSV 阈值 + 灯条几何特征检测
   // 彩色图转灰度图
   cv::Mat gray_img;
   cv::cvtColor(bgr_img, gray_img, cv::COLOR_BGR2GRAY);

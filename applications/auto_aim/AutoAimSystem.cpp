@@ -16,6 +16,9 @@
 
 #include "AutoAimSystem.hpp"
 
+#include "../../include/core/DebugContext.hpp"
+#include <opencv2/core/eigen.hpp>
+
 // ---------- 数学工具 — 从 spr_vision_try/tools/math_tools.hpp 移植关键函数 ----------
 // 完整版在 spr_vision_try 中，这里只移植 EKF 所需的三个函数
 #include <cmath>
@@ -98,9 +101,31 @@ AutoAimSystem::AutoAimSystem(const std::string & config_path) {
   }
 #endif
 
+  // ---- 加载调试用相机标定（EKF 重投影可视化） ----
+  try {
+    auto yaml2 = YAML::LoadFile(config_path);
+    auto cm_data = yaml2["camera_matrix"].as<std::vector<double>>();
+    auto dc_data = yaml2["distort_coeffs"].as<std::vector<double>>();
+    Eigen::Matrix<double, 3, 3, Eigen::RowMajor> cm(cm_data.data());
+    Eigen::Matrix<double, 1, 5> dc(dc_data.data());
+    cv::eigen2cv(cm, debug_camera_matrix_);
+    cv::eigen2cv(dc, debug_distort_coeffs_);
+
+    auto Rcg_data = yaml2["R_camera2gimbal"].as<std::vector<double>>();
+    auto tcg_data = yaml2["t_camera2gimbal"].as<std::vector<double>>();
+    debug_R_camera2gimbal_ = Eigen::Matrix<double, 3, 3, Eigen::RowMajor>(Rcg_data.data());
+    debug_t_camera2gimbal_ = Eigen::Matrix<double, 3, 1>(tcg_data.data());
+  } catch (...) {
+    // 非关键，调试功能失败不影响主流程
+  }
+
   // 初始化为 LOST 状态
   state_.track_state = TrackState::LOST;
   state_.pre_state   = TrackState::LOST;
+  state_.armor_num   = 0;
+  state_.ekf_dim     = 0;
+  state_.update_count = 0;
+  state_.is_converged = false;
   state_.last_timestamp = std::chrono::steady_clock::now();
 }
 
@@ -172,6 +197,9 @@ void AutoAimSystem::update(const ArmorList & armors_raw) {
     state_.track_state = TrackState::LOST;
     return;
   }
+
+  // ---- EKF 预测装甲板重投影可视化 ----
+  push_ekf_debug_image();
 }
 
 // ============================================================================
@@ -582,16 +610,60 @@ bool AutoAimSystem::update_target(ArmorList & armors, std::chrono::steady_clock:
     // ---- 装甲板匹配（原 Target::update 逻辑） ----
     int id = 0;
     if (state_.target_name == ArmorName::outpost && state_.armor_num == 3 && state_.ekf_dim >= 13) {
+      double z0_var = ekf_.P(4, 4);
+      double z1_var = ekf_.P(11, 11);
+      double z2_var = ekf_.P(12, 12);
+      bool z_converged = (z0_var < 0.01) && (z1_var < 0.01) && (z2_var < 0.01) &&
+                         (std::abs(ekf_.x[11] - ekf_.x[4]) > 0.03 ||
+                          std::abs(ekf_.x[12] - ekf_.x[4]) > 0.03);
+
       double z_obs = armor.xyz_in_world[2];
       int height_matched_id = match_armor_id(z_obs);
-      id = height_matched_id;  // 简化：直接用高度匹配结果
+      double min_error = 1e10;
+      int final_id = height_matched_id;
+
+      for (int offset = -1; offset <= 1; offset++) {
+        int check_id = (height_matched_id + offset + state_.armor_num) % state_.armor_num;
+        auto check_angle = limit_rad(ekf_.x[6] + check_id * 2 * kPi / state_.armor_num);
+        double angle_error = std::abs(limit_rad(armor.ypr_in_world[0] - check_angle));
+        auto check_xyz = h_armor_xyz(ekf_.x, check_id);
+        double height_error = std::abs(z_obs - check_xyz[2]) * (z_converged ? 2.0 : 0.5);
+        double total_error = angle_error + height_error;
+
+        if (total_error < min_error) {
+          min_error = total_error;
+          final_id = check_id;
+        }
+      }
+      id = final_id;
     } else {
-      // 角度最近匹配
-      double min_err = 1e10;
-      for (int i = 0; i < state_.armor_num; ++i) {
+      // 距离排序 + 角度&ypd组合匹配（原 Target::update 逻辑）
+      auto min_angle_error = 1e10;
+      std::vector<std::pair<Eigen::Vector4d, int>> xyza_i_list;
+      for (int i = 0; i < state_.armor_num; i++) {
         auto angle = limit_rad(ekf_.x[6] + i * 2 * kPi / state_.armor_num);
-        double err = std::abs(limit_rad(armor.ypr_in_world[0] - angle));
-        if (err < min_err) { min_err = err; id = i; }
+        auto xyz = h_armor_xyz(ekf_.x, i);
+        xyza_i_list.push_back({{xyz[0], xyz[1], xyz[2], angle}, i});
+      }
+
+      // 按距离排序取前 3 个
+      std::sort(xyza_i_list.begin(), xyza_i_list.end(),
+        [](const std::pair<Eigen::Vector4d, int> & a,
+           const std::pair<Eigen::Vector4d, int> & b) {
+          Eigen::Vector3d ypd1 = xyz2ypd(a.first.head<3>());
+          Eigen::Vector3d ypd2 = xyz2ypd(b.first.head<3>());
+          return ypd1[2] < ypd2[2];
+        });
+
+      for (int i = 0; i < 3 && i < static_cast<int>(xyza_i_list.size()); i++) {
+        const auto & xyza = xyza_i_list[i].first;
+        Eigen::Vector3d ypd = xyz2ypd(xyza.head<3>());
+        auto angle_error = std::abs(limit_rad(armor.ypr_in_world[0] - xyza[3])) +
+                           std::abs(limit_rad(armor.ypd_in_world[0] - ypd[0]));
+        if (std::abs(angle_error) < std::abs(min_angle_error)) {
+          id = xyza_i_list[i].second;
+          min_angle_error = angle_error;
+        }
       }
     }
 
@@ -614,6 +686,81 @@ void AutoAimSystem::sync_state_from_ekf() {
   state_.ekf_x = ekf_.x;
   state_.ekf_P = ekf_.P;
   state_.ekf_dim = static_cast<int>(ekf_.x.size());
+}
+
+// ============================================================================
+// EKF 调试（全部 N 块装甲板重投影）
+// ============================================================================
+
+std::vector<Eigen::Vector4d> AutoAimSystem::ekf_armor_xyza_list() const {
+  std::vector<Eigen::Vector4d> list;
+  if (state_.armor_num == 0) return list;
+  for (int i = 0; i < state_.armor_num; i++) {
+    auto angle = limit_rad(ekf_.x[6] + i * 2 * kPi / state_.armor_num);
+    auto xyz = h_armor_xyz(ekf_.x, i);
+    list.push_back({xyz[0], xyz[1], xyz[2], angle});
+  }
+  return list;
+}
+
+void AutoAimSystem::push_ekf_debug_image() {
+  if (debug_camera_matrix_.empty() || state_.armor_num == 0) return;
+
+  // 从 DebugContext 取原始相机帧
+  auto images = aim::DebugContext::getInstance().getImages();
+  auto it = images.find("Camera");
+  if (it == images.end() || it->second.empty()) return;
+
+  cv::Mat ekf_img = it->second.clone();
+  if (ekf_img.empty()) return;
+
+  const std::vector<cv::Point3f> BIG_PTS{
+    {0,  0.115,  0.028}, {0, -0.115,  0.028},
+    {0, -0.115, -0.028}, {0,  0.115, -0.028}};
+  const std::vector<cv::Point3f> SML_PTS{
+    {0,  0.0675,  0.028}, {0, -0.0675,  0.028},
+    {0, -0.0675, -0.028}, {0,  0.0675, -0.028}};
+
+  auto & R_cg = debug_R_camera2gimbal_;
+  auto & t_cg = debug_t_camera2gimbal_;
+  auto & R_gw = debug_R_gimbal2world_;
+  auto & K   = debug_camera_matrix_;
+  auto & D   = debug_distort_coeffs_;
+
+  auto plates = ekf_armor_xyza_list();
+  for (const auto & plate : plates) {
+    double yaw = plate[3];
+    Eigen::Vector3d xyz_world(plate[0], plate[1], plate[2]);
+    auto type = state_.target_type;
+
+    const auto & pts = (type == ArmorType::big) ? BIG_PTS : SML_PTS;
+
+    double sin_yaw = std::sin(yaw), cos_yaw = std::cos(yaw);
+    double pitch = 15.0 * CV_PI / 180.0;
+    double sin_p = std::sin(pitch), cos_p = std::cos(pitch);
+    Eigen::Matrix3d R_aw{
+      {cos_yaw * cos_p, -sin_yaw, cos_yaw * sin_p},
+      {sin_yaw * cos_p,  cos_yaw, sin_yaw * sin_p},
+      {        -sin_p,        0,           cos_p}};
+
+    Eigen::Matrix3d R_ac = R_cg.transpose() * R_gw.transpose() * R_aw;
+    Eigen::Vector3d t_ac = R_cg.transpose() * (R_gw.transpose() * xyz_world - t_cg);
+
+    cv::Mat R_ac_cv; cv::eigen2cv(R_ac, R_ac_cv);
+    cv::Vec3d rvec;  cv::Rodrigues(R_ac_cv, rvec);
+    cv::Vec3d tvec(t_ac[0], t_ac[1], t_ac[2]);
+
+    std::vector<cv::Point2f> img_pts;
+    cv::projectPoints(pts, rvec, tvec, K, D, img_pts);
+
+    // 红色 = EKF 预测的全部装甲板
+    for (const auto & pt : img_pts)
+      cv::circle(ekf_img, pt, 3, {0, 0, 255}, -1);
+    for (size_t i = 0; i < img_pts.size(); i++)
+      cv::line(ekf_img, img_pts[i], img_pts[(i + 1) % img_pts.size()], {0, 0, 255}, 1);
+  }
+
+  aim::DebugContext::getInstance().setImage("EKF", ekf_img);
 }
 
 }  // namespace auto_aim

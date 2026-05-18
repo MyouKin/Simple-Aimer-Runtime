@@ -107,11 +107,16 @@ endif()
 # ---- 源文件 ----
 file(GLOB APP_SOURCES "*.cpp")
 
-# AutoAimProvider（相机驱动 + 检测器 + 分类器）
+# AutoAimProvider（相机驱动 + 检测器 + 分类器 + PnP + YOLO）
 file(GLOB PROVIDER_SOURCES
     "${PROVIDER_DIR}/AutoAimProvider.cpp"
     "${PROVIDER_DIR}/detector.cpp"
     "${PROVIDER_DIR}/classifier.cpp"
+    "${PROVIDER_DIR}/pnp_solver.cpp"
+    "${PROVIDER_DIR}/yolo.cpp"
+    "${PROVIDER_DIR}/yolos/yolov5.cpp"
+    "${PROVIDER_DIR}/yolos/yolov8.cpp"
+    "${PROVIDER_DIR}/yolos/yolo11.cpp"
 )
 
 # AutoAimProvider 相机驱动（io: camera + mindvision + hikrobot）

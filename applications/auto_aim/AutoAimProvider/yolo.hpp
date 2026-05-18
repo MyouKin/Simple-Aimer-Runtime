@@ -3,7 +3,7 @@
 
 #include <opencv2/opencv.hpp>
 
-#include "armor.hpp"
+#include "../types.hpp"
 
 namespace auto_aim
 {

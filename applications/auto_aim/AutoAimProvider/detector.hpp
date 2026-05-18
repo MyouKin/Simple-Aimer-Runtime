@@ -36,6 +36,7 @@ private:
   double max_rectangular_error_;
 
   bool debug_;
+  bool use_traditional_;
   std::string save_path_;
 
   // 利用PCA回归角点，参考自https://github.com/CSU-FYT-Vision/FYT2024_vision
