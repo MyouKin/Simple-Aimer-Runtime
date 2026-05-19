@@ -1,5 +1,5 @@
-#enemy_color: "red"
-enemy_color: "blue"
+enemy_color: "red"
+# enemy_color: "blue"
 
 #####-----神经网络参数-----#####
 yolo_name: yolov5
@@ -14,10 +14,10 @@ use_traditional: false
 #####-----web_debug_display-----#####
 debug_display:
   window:
-    enabled: false
-    auto_detect: false
-  web:
     enabled: true
+    auto_detect: true
+  web:
+    enabled: false
     port: 8080
 
 
@@ -67,31 +67,33 @@ second_tolerance: 2 # 远距离射击容差，degree
 judge_distance: 2 #距离判断阈值
 auto_fire: true # 是否由自瞄控制射击
 
-# camera_name: "hikrobot"
-# exposure_ms: 2
-# gain: 16.0
-# vid_pid: "2bdf:0001"
+camera_name: "hikrobot"
+exposure_ms: 2.3
+gain: 16.0
+vid_pid: "2bdf:0001"
 
-camera_name: "mindvision"
-exposure_ms: 4.0
-gamma: 0.5
-vid_pid: "f622:d132"
+# camera_name: "mindvision"
+# exposure_ms: 2.0
+# gamma: 0.5
+# vid_pid: "f622:d132"
 
 #  1  0  0
 #  0  1  0
 #  0  0  1
 
+
 R_gimbal2imubody: [0, 1, 0, -1, 0, 0, 0, 0, -1]
 
-# # 重投影误差: 0.214px
-camera_matrix: [2348.28807, 0.00000, 715.8871,  0.000000, 2343.20121, 549.08769, 0.00000, 0.00000, 1.00000]
-distort_coeffs: [-0.113753, 0.476220, -0.000367, 0.000390, 0.000000]
 
-# 相机同理想情况的偏角: yaw0.50 pitch0.89 roll-4.09 degree
-# 标定板到世界坐标系原点的水平距离: 1.84 m
-# 标定板同竖直摆放时的偏角: yaw21.15 pitch5.80 roll-95.22 degree
-R_camera2gimbal: [-0.0097593608923142363, 0.014906909346876499, 0.9998412568646573, -0.99740747610409053, -0.07143632359391644, -0.0086705411049835795, 0.0712957325976913, -0.99733376345389468, 0.015565435690953719]
-t_camera2gimbal: [0.02663681156986614, -0.00018454730148609257, 0.10511518672308437]
+# 重投影误差: 0.1895px
+camera_matrix: [2329.1322159831457, 0, 699.94972399582161, 0, 2328.5150920386568, 539.7883954837713, 0, 0, 1]
+distort_coeffs: [-0.074347109072403605, 0.38386500997544015, -0.00083069045638853539, -0.00086648584884281728, 0]
+
+# 相机同理想情况的偏角: yaw-1.61 pitch-0.42 roll0.37 degree
+# 标定板到世界坐标系原点的水平距离: 1.89 m
+# 标定板同竖直摆放时的偏角: yaw-29.35 pitch5.85 roll-90.34 degree
+R_camera2gimbal: [0.02805698081481597, -0.0074386604635558557, 0.99957864730998758, -0.99958514252024233, 0.006301184864982449, 0.028104055260478478, -0.0065075863685210246, -0.99995247957080702, -0.0072587822567557704]
+t_camera2gimbal: [0.1458589467761009, -0.041522973787153201, 0.035502716467299897]
 
 
 #####-----cboard参数-----#####

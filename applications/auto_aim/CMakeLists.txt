@@ -85,19 +85,18 @@ include_directories(
     ${PROVIDER_DIR}                                    # for AutoAimProvider/io/camera.hpp etc.
     ${PROVIDER_DIR}/io/mindvision/include               # for CameraApi.h (MindVision SDK)
     ${PROVIDER_DIR}/io/hikrobot/include                 # for MvCameraControl.h (HikRobot SDK)
+    ${PROVIDER_DIR}/io/serial/include                   # for serial.h (串口库)
 )
 
-# ---- TinyMPC（可选） ----
-# 下载 TinyMPC 后，通过 -DTINYMPC_INCLUDE_DIR=/path/to/TinyMPC/include 启用 MPC
-if(DEFINED TINYMPC_INCLUDE_DIR)
-    add_definitions(-DTINYMPC_INCLUDE_DIR="${TINYMPC_INCLUDE_DIR}")
+# ---- TinyMPC（位于 include/tinympc/，spr_vision_try 移植） ----
+set(TINYMPC_DIR "${CMAKE_SOURCE_DIR}/include/tinympc")
+if(EXISTS "${TINYMPC_DIR}/tiny_api.cpp")
+    add_definitions(-DTINYMPC_INCLUDE_DIR="${TINYMPC_DIR}")
     add_definitions(-DAIM_HAS_TINYMPC)
-    include_directories(${TINYMPC_INCLUDE_DIR})
-    message(STATUS "AutoAim: TinyMPC enabled at ${TINYMPC_INCLUDE_DIR}")
+    include_directories(${TINYMPC_DIR})
+    message(STATUS "AutoAim: TinyMPC enabled at ${TINYMPC_DIR}")
 else()
-    message(STATUS "AutoAim: TinyMPC not found — MPC will be stubbed. "
-                    "Download from https://github.com/TinyMPC/TinyMPC "
-                    "and pass -DTINYMPC_INCLUDE_DIR=...")
+    message(STATUS "AutoAim: TinyMPC not found — MPC will be stubbed.")
 endif()
 
 if(APPLE)
@@ -107,7 +106,15 @@ endif()
 # ---- 源文件 ----
 file(GLOB APP_SOURCES "*.cpp")
 
-# AutoAimProvider（相机驱动 + 检测器 + 分类器 + PnP + YOLO）
+# 确保 assets 软链接存在（模型文件路径）
+add_custom_target(assets_link ALL
+    COMMAND ${CMAKE_COMMAND} -E create_symlink
+        "${CMAKE_SOURCE_DIR}/applications/auto_aim/AutoAimProvider/assets"
+        "${CMAKE_BINARY_DIR}/assets"
+    COMMENT "Creating assets symlink"
+)
+
+# AutoAimProvider（相机驱动 + 检测器 + 分类器 + PnP + YOLO + 串口云台）
 file(GLOB PROVIDER_SOURCES
     "${PROVIDER_DIR}/AutoAimProvider.cpp"
     "${PROVIDER_DIR}/detector.cpp"
@@ -117,6 +124,22 @@ file(GLOB PROVIDER_SOURCES
     "${PROVIDER_DIR}/yolos/yolov5.cpp"
     "${PROVIDER_DIR}/yolos/yolov8.cpp"
     "${PROVIDER_DIR}/yolos/yolo11.cpp"
+    "${PROVIDER_DIR}/io/gimbal/gimbal.cpp"
+)
+
+# 串口库（wjwwood/serial）
+file(GLOB SERIAL_SOURCES
+    "${PROVIDER_DIR}/io/serial/src/serial.cc"
+    "${PROVIDER_DIR}/io/serial/src/impl/unix.cc"
+    "${PROVIDER_DIR}/io/serial/src/impl/list_ports/list_ports_linux.cc"
+)
+
+# TinyMPC 求解器
+file(GLOB TINYMPC_SOURCES
+    "${TINYMPC_DIR}/admm.cpp"
+    "${TINYMPC_DIR}/tiny_api.cpp"
+    "${TINYMPC_DIR}/codegen.cpp"
+    "${TINYMPC_DIR}/rho_benchmark.cpp"
 )
 
 # AutoAimProvider 相机驱动（io: camera + mindvision + hikrobot）
@@ -153,7 +176,8 @@ file(GLOB IMGUI_SOURCES
     "${IMGUI_DIR}/backends/imgui_impl_opengl3.cpp"
 )
 
-add_executable(auto_aim ${APP_SOURCES} ${PROVIDER_SOURCES} ${PROVIDER_IO_SOURCES} ${PROVIDER_TOOLS_SOURCES} ${TOOLS_SOURCES} ${DEBUG_SOURCES} ${IMGUI_SOURCES})
+add_executable(auto_aim ${APP_SOURCES} ${PROVIDER_SOURCES} ${PROVIDER_IO_SOURCES} ${PROVIDER_TOOLS_SOURCES} ${TOOLS_SOURCES} ${DEBUG_SOURCES} ${IMGUI_SOURCES} ${SERIAL_SOURCES} ${TINYMPC_SOURCES})
+add_dependencies(auto_aim assets_link)
 target_compile_definitions(auto_aim PRIVATE GL_SILENCE_DEPRECATION)
 
 # ---- 链接 ----
@@ -208,6 +232,7 @@ else()
         fmt              # spdlog 依赖的格式化库
         openvino         # OpenVINO runtime (classifier)
         pthread          # 线程
+        rt               # 实时库（串口）
     )
 endif()
 

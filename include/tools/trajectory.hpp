@@ -65,12 +65,23 @@ struct Trajectory {
       unsolvable = true;
       return;
     }
+    double sqrt_D = std::sqrt(discriminant);
 
-    double tan_theta = (v0_sq + std::sqrt(discriminant)) / (g * d);
-    pitch = std::atan(tan_theta);
+    // 高抛解与低平解两种，取飞行时间短的那个（更直接的弹道）
+    double tan_high = (v0_sq + sqrt_D) / (g * d);
+    double tan_low  = (v0_sq - sqrt_D) / (g * d);
 
-    fly_time = d / (v0 * std::cos(pitch));
-    if (fly_time < 0) {
+    double theta_high = std::atan(tan_high);
+    double theta_low  = std::atan(tan_low);
+
+    double ft_high = d / (v0 * std::cos(theta_high));
+    double ft_low  = d / (v0 * std::cos(theta_low));
+
+    if (ft_low > 0 && ft_low <= ft_high) {
+      pitch = theta_low;  fly_time = ft_low;
+    } else if (ft_high > 0) {
+      pitch = theta_high; fly_time = ft_high;
+    } else {
       unsolvable = true;
     }
   }

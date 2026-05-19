@@ -24,6 +24,7 @@
 #include "io/camera.hpp"
 #include "tools/yaml.hpp"
 
+#include <fmt/core.h>
 #include <iostream>
 
 namespace auto_aim {
@@ -57,6 +58,20 @@ AutoAimProvider::AutoAimProvider(const std::string & config_path) {
 
 AutoAimProvider::~AutoAimProvider() = default;
 
+void AutoAimProvider::acceptFeedback(const aim::SelfState & fb) {
+  if (!fb.valid) return;
+  Eigen::Quaterniond q(fb.imu_qw, fb.imu_qx, fb.imu_qy, fb.imu_qz);
+  pnp_solver_->setRgimbal2world(q);
+
+  // 曲线：IMU 欧拉角
+  auto euler = q.toRotationMatrix().eulerAngles(2, 1, 0);
+  aim::DebugContext::getInstance().pushCurveData("imu_yaw_deg",   static_cast<float>(euler[0] * 57.3));
+  aim::DebugContext::getInstance().pushCurveData("imu_pitch_deg", static_cast<float>(euler[1] * 57.3));
+  aim::DebugContext::getInstance().pushCurveData("self_yaw_deg",  static_cast<float>(fb.yaw));
+  aim::DebugContext::getInstance().pushCurveData("self_pitch_deg",static_cast<float>(fb.pitch));
+  aim::DebugContext::getInstance().pushCurveData("bullet_speed_ms",static_cast<float>(fb.bullet_speed));
+}
+
 bool AutoAimProvider::fetch(ArmorList & out_armors) {
   // 1. 从相机读取一帧
   camera_->read(last_frame_, last_timestamp_);
@@ -77,6 +92,15 @@ bool AutoAimProvider::fetch(ArmorList & out_armors) {
   // 4. PnP 3D 解算（填入 xyz_in_world / ypr_in_world / ypd_in_world）
   for (auto & armor : out_armors) {
     pnp_solver_->solve(armor);
+  }
+
+  // 曲线：目标 3D 位置
+  if (!out_armors.empty()) {
+    auto & a = out_armors.front();
+    aim::DebugContext::getInstance().pushCurveData("target_x_m", static_cast<float>(a.xyz_in_world[0]));
+    aim::DebugContext::getInstance().pushCurveData("target_y_m", static_cast<float>(a.xyz_in_world[1]));
+    aim::DebugContext::getInstance().pushCurveData("target_z_m", static_cast<float>(a.xyz_in_world[2]));
+    aim::DebugContext::getInstance().pushCurveData("target_dist_m", static_cast<float>(a.ypd_in_world[2]));
   }
 
   // 5. 绘制检测结果图像 → 推送到 ImGui 调试面板

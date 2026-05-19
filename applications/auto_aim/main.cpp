@@ -2,10 +2,10 @@
 /// @brief AutoAim 应用入口
 ///
 /// 管道：AutoAimProvider → AutoAimSystem → AutoAimSelector → AutoAimSolver → AutoAimGimbal
-///                                                                              ↑
-///                                                         继承自 aim::GimbalActuator
-///                                                         覆写 transmit() 实现串口协议
-///                                                         覆写 receive()  实现回读反馈
+///
+/// Actuator 内部使用 io::Gimbal（串口收发），后台线程持续读取云台反馈。
+/// Runtime 每帧调用 actuator->feedback() 获取最新 IMU 四元数，
+/// Provider 通过 acceptFeedback() 更新 PnP 世界变换。
 
 #include "../../include/runtime/Runtime.hpp"
 #include "GimbalActuator.hpp"
@@ -14,64 +14,71 @@
 #include "AutoAimSelector.hpp"
 #include "AutoAimSolver.hpp"
 
+#include "AutoAimProvider/io/gimbal/gimbal.hpp"
+
 #include <iostream>
 #include <memory>
 
 using namespace auto_aim;
 
 // ============================================================================
-// AutoAimGimbal — 继承运行时的 GimbalActuator，仅需实现串口收发
+// AutoAimGimbal — 封装 io::Gimbal 实现串口收发
 // ============================================================================
 
-/// @brief auto_aim 专用云台执行器
-///
-/// 使用 VisionToGimbal / GimbalToVision 协议帧格式。
-/// 将 is_fine_aiming 标志解析为开火指令。
 class AutoAimGimbal : public aim::GimbalActuator {
 public:
-  explicit AutoAimGimbal(const std::string & config_path) {
-    // TODO: 从 config 读取串口参数 (port, baud_rate)，初始化串口连接
-    setControlMode(aim::GimbalActuator::ControlMode::FULL);  // MPC 需要全部控制量
+  explicit AutoAimGimbal(const std::string & config_path)
+    : gimbal_(config_path)
+  {
+    setControlMode(aim::GimbalActuator::ControlMode::FULL);
+  }
+
+  /// @brief 获取最新云台状态（非阻塞，由内部 read_thread 持续更新）
+  io::GimbalState gimbalState() const { return gimbal_.state(); }
+
+  /// @brief 获取时刻 t 的 IMU 四元数（球面线性插值）
+  Eigen::Quaterniond imuQuaternion(std::chrono::steady_clock::time_point t) {
+    return gimbal_.q(t);
   }
 
 protected:
   bool transmit(const aim::Command & cmd) override {
-    // TODO: 打包为 VisionToGimbal 帧并通过串口发送
-    //
-    // VisionToGimbal 帧格式 (参考 spr_vision_try/io/gimbal/gimbal.hpp):
-    //   head[2] = {'S','P'}
-    //   mode     = cmd.is_fine_aiming ? 2 : 1   // 2=控制且开火, 1=仅控制
-    //   yaw      = float(cmd.yaw)
-    //   yaw_vel  = float(cmd.yaw_vel)
-    //   yaw_acc  = float(cmd.yaw_acc)
-    //   pitch    = float(cmd.pitch)
-    //   pitch_vel = float(cmd.pitch_vel)
-    //   pitch_acc = float(cmd.pitch_acc)
-    //   tail     = 0xef
-    //
-    // serial.write(packet, sizeof(packet));
+    gimbal_.send(
+      true,                         // control
+      cmd.is_fine_aiming,           // fire
+      static_cast<float>(cmd.yaw),
+      static_cast<float>(cmd.yaw_vel),
+      static_cast<float>(cmd.yaw_acc),
+      static_cast<float>(cmd.pitch),
+      static_cast<float>(cmd.pitch_vel),
+      static_cast<float>(cmd.pitch_acc));
     return true;
   }
 
   std::optional<aim::SelfState> receive() override {
-    // TODO: 从串口读取 GimbalToVision 帧，解析为 SelfState
-    //
-    // GimbalToVision 帧格式:
-    //   head[2] = {'S','P'}
-    //   q[4]    = IMU 四元数 (wxyz)
-    //   yaw, yaw_vel, pitch, pitch_vel, bullet_speed, bullet_count
-    //   tail    = 0xef
-    //
-    // aim::SelfState gs;
-    // gs.yaw      = rx.yaw;
-    // gs.yaw_vel  = rx.yaw_vel;
-    // gs.pitch    = rx.pitch;
-    // gs.pitch_vel = rx.pitch_vel;
-    // gs.timestamp = std::chrono::high_resolution_clock::now();
-    // gs.valid     = true;
-    // return gs;
-    return std::nullopt;  // 暂未实现回读
+    auto t = std::chrono::steady_clock::now();
+    auto gs = gimbal_.state();
+    auto q  = gimbal_.q(t);
+
+    aim::SelfState s;
+    s.timestamp    = aim::TimePoint(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                      t.time_since_epoch()));
+    s.yaw          = static_cast<double>(gs.yaw);
+    s.pitch        = static_cast<double>(gs.pitch);
+    s.yaw_vel      = static_cast<double>(gs.yaw_vel);
+    s.pitch_vel    = static_cast<double>(gs.pitch_vel);
+    s.imu_qw       = static_cast<double>(q.w());
+    s.imu_qx       = static_cast<double>(q.x());
+    s.imu_qy       = static_cast<double>(q.y());
+    s.imu_qz       = static_cast<double>(q.z());
+    s.bullet_speed = static_cast<double>(gs.bullet_speed);
+    s.bullet_count = gs.bullet_count;
+    s.valid        = true;
+    return s;
   }
+
+private:
+  io::Gimbal gimbal_;
 };
 
 // ============================================================================

@@ -18,18 +18,11 @@
 
 #include "../../include/core/DebugContext.hpp"
 #include <opencv2/core/eigen.hpp>
-
-// ---------- 数学工具 — 从 spr_vision_try/tools/math_tools.hpp 移植关键函数 ----------
-// 完整版在 spr_vision_try 中，这里只移植 EKF 所需的三个函数
+#include <yaml-cpp/yaml.h>
 #include <cmath>
 #include <numeric>
 
-// 配置读取：优先 yaml-cpp，回退 OpenCV FileStorage
-#ifdef HAS_YAML_CPP
-#include <yaml-cpp/yaml.h>
-#else
-#include <opencv2/opencv.hpp>
-#endif
+#include "../AutoAimProvider/tools/logger.hpp"
 
 namespace {
 
@@ -57,6 +50,26 @@ inline Eigen::Vector3d xyz2ypd(const Eigen::Vector3d & xyz) {
     std::atan2(xyz.z(), std::sqrt(xyz.x() * xyz.x() + xyz.y() * xyz.y())),
     xyz.norm()
   };
+}
+
+/// 球坐标变换 ypd = f(xyz) 对 xyz 的雅可比（3×3）
+inline Eigen::Matrix3d xyz2ypd_jacobian(const Eigen::Vector3d & xyz) {
+  double x = xyz.x(), y = xyz.y(), z = xyz.z();
+  double r2 = x * x + y * y;
+  double r = std::sqrt(r2);
+  double d2 = r2 + z * z;
+  double d = std::sqrt(d2);
+  double dr_dx = x / r, dr_dy = y / r;
+  double dd_dx = x / d, dd_dy = y / d, dd_dz = z / d;
+
+  Eigen::Matrix3d H;
+  // dyaw/dx, dyaw/dy, dyaw/dz
+  H(0, 0) = -y / r2;  H(0, 1) = x / r2;  H(0, 2) = 0;
+  // dpitch/dx, dpitch/dy, dpitch/dz
+  H(1, 0) = -x * z / (d2 * r);  H(1, 1) = -y * z / (d2 * r);  H(1, 2) = r / d2;
+  // ddistance/dx, ddistance/dy, ddistance/dz
+  H(2, 0) = dd_dx;  H(2, 1) = dd_dy;  H(2, 2) = dd_dz;
+  return H;
 }
 
 }  // anonymous namespace
@@ -115,8 +128,11 @@ AutoAimSystem::AutoAimSystem(const std::string & config_path) {
     auto tcg_data = yaml2["t_camera2gimbal"].as<std::vector<double>>();
     debug_R_camera2gimbal_ = Eigen::Matrix<double, 3, 3, Eigen::RowMajor>(Rcg_data.data());
     debug_t_camera2gimbal_ = Eigen::Matrix<double, 3, 1>(tcg_data.data());
-  } catch (...) {
-    // 非关键，调试功能失败不影响主流程
+
+    auto Rgi_data = yaml2["R_gimbal2imubody"].as<std::vector<double>>();
+    debug_R_gimbal2imubody_ = Eigen::Matrix<double, 3, 3, Eigen::RowMajor>(Rgi_data.data());
+  } catch (const std::exception & e) {
+    tools::logger()->warn("[AutoAimSystem] Failed to load debug camera: {}", e.what());
   }
 
   // 初始化为 LOST 状态
@@ -142,6 +158,11 @@ std::string AutoAimSystem::trackStateStr() const {
 
 void AutoAimSystem::updateSelfState(const aim::SelfState & self) {
   state_.self = self;
+  if (self.valid) {
+    Eigen::Quaterniond q(self.imu_qw, self.imu_qx, self.imu_qy, self.imu_qz);
+    Eigen::Matrix3d R_ib2ia = q.toRotationMatrix();
+    debug_R_gimbal2world_ = debug_R_gimbal2imubody_.transpose() * R_ib2ia * debug_R_gimbal2imubody_;
+  }
 }
 
 // ============================================================================
@@ -200,6 +221,19 @@ void AutoAimSystem::update(const ArmorList & armors_raw) {
 
   // ---- EKF 预测装甲板重投影可视化 ----
   push_ekf_debug_image();
+
+  // 曲线：EKF 状态
+  if (state_.armor_num > 0 && ekf_.x.size() >= 8) {
+    auto & ctx = aim::DebugContext::getInstance();
+    ctx.pushCurveData("ekf_x_m",     static_cast<float>(ekf_.x[0]));
+    ctx.pushCurveData("ekf_y_m",     static_cast<float>(ekf_.x[2]));
+    ctx.pushCurveData("ekf_vx_ms",   static_cast<float>(ekf_.x[1]));
+    ctx.pushCurveData("ekf_vy_ms",   static_cast<float>(ekf_.x[3]));
+    ctx.pushCurveData("ekf_angle_deg", static_cast<float>(ekf_.x[6] * 57.3));
+    ctx.pushCurveData("ekf_omega_degs", static_cast<float>(ekf_.x[7] * 57.3));
+    ctx.pushCurveData("ekf_r_m",     static_cast<float>(ekf_.x[8]));
+    ctx.pushCurveData("track_state", static_cast<float>(static_cast<int>(state_.track_state)));
+  }
 }
 
 // ============================================================================
@@ -402,34 +436,73 @@ Eigen::Vector3d AutoAimSystem::h_armor_xyz(const Eigen::VectorXd & x, int id) co
 // ============================================================================
 
 Eigen::MatrixXd AutoAimSystem::h_jacobian(const Eigen::VectorXd & x, int id) const {
-  // 原代码中的 h_jacobian 使用数值微分或解析雅可比
-  // 这里保留与原代码相同的结构：用中心差分近似雅可比
-  const double eps = 1e-6;
-  int dim = static_cast<int>(x.size());
-  int obs_dim = 4;
-  Eigen::MatrixXd H(obs_dim, dim);
+  auto angle = limit_rad(x[6] + id * 2 * kPi / state_.armor_num);
 
-  auto h = [&](const Eigen::VectorXd & xx) -> Eigen::Vector4d {
-    Eigen::VectorXd xyz = h_armor_xyz(xx, id);
-    Eigen::VectorXd ypd = xyz2ypd(xyz);
-    auto angle = limit_rad(xx[6] + id * 2 * kPi / state_.armor_num);
-    return {ypd[0], ypd[1], ypd[2], angle};
-  };
+  // === 前哨站 13 维解析雅可比 ===
+  if (state_.target_name == ArmorName::outpost && state_.armor_num == 3
+      && static_cast<int>(x.size()) >= 13) {
+    auto r = x[8];
+    auto dx_da = r * std::sin(angle);
+    auto dy_da = -r * std::cos(angle);
+    auto dx_dr = -std::cos(angle);
+    auto dy_dr = -std::sin(angle);
+    double dz_dz0 = (id == 0) ? 1.0 : 0.0;
+    double dz_dz1 = (id == 1) ? 1.0 : 0.0;
+    double dz_dz2 = (id == 2) ? 1.0 : 0.0;
 
-  Eigen::VectorXd h0 = h(x);
-  for (int j = 0; j < dim; ++j) {
-    Eigen::VectorXd xp = x, xn = x;
-    xp[j] += eps;
-    xn[j] -= eps;
-    Eigen::VectorXd hp = h(xp);
-    Eigen::VectorXd hn = h(xn);
-    for (int i = 0; i < obs_dim; ++i) {
-      double diff = hp[i] - hn[i];
-      if (i == 0 || i == 3) diff = limit_rad(diff);  // 角度维度 wrap
-      H(i, j) = diff / (2.0 * eps);
-    }
+    // clang-format off
+    Eigen::MatrixXd H_armor_xyza(4, 13);
+    H_armor_xyza <<
+      1, 0, 0, 0,     0, 0, dx_da, 0, dx_dr, 0, 0,     0,     0,
+      0, 0, 1, 0,     0, 0, dy_da, 0, dy_dr, 0, 0,     0,     0,
+      0, 0, 0, 0, dz_dz0, 0,     0, 0,     0, 0, 0, dz_dz1, dz_dz2,
+      0, 0, 0, 0,     0, 0,     1, 0,     0, 0, 0,     0,     0;
+    // clang-format on
+
+    Eigen::Vector3d armor_xyz = h_armor_xyz(x, id);
+    Eigen::Matrix3d H_armor_ypd = xyz2ypd_jacobian(armor_xyz);
+    Eigen::MatrixXd H_armor_ypda(4, 4);
+    // clang-format off
+    H_armor_ypda <<
+      H_armor_ypd(0, 0), H_armor_ypd(0, 1), H_armor_ypd(0, 2), 0,
+      H_armor_ypd(1, 0), H_armor_ypd(1, 1), H_armor_ypd(1, 2), 0,
+      H_armor_ypd(2, 0), H_armor_ypd(2, 1), H_armor_ypd(2, 2), 0,
+                       0,                  0,                  0, 1;
+    // clang-format on
+    return H_armor_ypda * H_armor_xyza;
   }
-  return H;
+
+  // === 11 维解析雅可比（普通 / 平衡步兵） ===
+  auto use_l_h = (state_.armor_num == 4) && (id == 1 || id == 3);
+  auto r = (use_l_h) ? x[8] + x[9] : x[8];
+  auto dx_da = r * std::sin(angle);
+  auto dy_da = -r * std::cos(angle);
+  auto dx_dr = -std::cos(angle);
+  auto dy_dr = -std::sin(angle);
+  auto dx_dl = (use_l_h) ? -std::cos(angle) : 0.0;
+  auto dy_dl = (use_l_h) ? -std::sin(angle) : 0.0;
+  auto dz_dh = (use_l_h) ? 1.0 : 0.0;
+
+  // clang-format off
+  Eigen::MatrixXd H_armor_xyza(4, 11);
+  H_armor_xyza <<
+    1, 0, 0, 0, 0, 0, dx_da, 0, dx_dr, dx_dl,     0,
+    0, 0, 1, 0, 0, 0, dy_da, 0, dy_dr, dy_dl,     0,
+    0, 0, 0, 0, 1, 0,     0, 0,     0,     0, dz_dh,
+    0, 0, 0, 0, 0, 0,     1, 0,     0,     0,     0;
+  // clang-format on
+
+  Eigen::Vector3d armor_xyz = h_armor_xyz(x, id);
+  Eigen::Matrix3d H_armor_ypd = xyz2ypd_jacobian(armor_xyz);
+  Eigen::MatrixXd H_armor_ypda(4, 4);
+  // clang-format off
+  H_armor_ypda <<
+    H_armor_ypd(0, 0), H_armor_ypd(0, 1), H_armor_ypd(0, 2), 0,
+    H_armor_ypd(1, 0), H_armor_ypd(1, 1), H_armor_ypd(1, 2), 0,
+    H_armor_ypd(2, 0), H_armor_ypd(2, 1), H_armor_ypd(2, 2), 0,
+                     0,                  0,                  0, 1;
+  // clang-format on
+  return H_armor_ypda * H_armor_xyza;
 }
 
 // ============================================================================

@@ -18,6 +18,11 @@ struct SelfState {
     double yaw_vel = 0.0;
     double pitch_vel = 0.0;
     bool valid = false;
+
+    // ---- auto_aim 扩展（IMU 四元数 + 弹速） ----
+    double imu_qw = 1.0, imu_qx = 0.0, imu_qy = 0.0, imu_qz = 0.0;  // wxyz
+    double bullet_speed = 0.0;
+    uint16_t bullet_count = 0;
 };
 
 /// @brief 系统状态容器

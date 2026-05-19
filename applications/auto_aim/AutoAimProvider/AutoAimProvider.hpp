@@ -39,6 +39,9 @@ public:
   /// @return true 取图成功（即使未检测到装甲板），false 相机取图失败
   bool fetch(ArmorList & out_armors) override;
 
+  /// @brief 接收 Actuator 反馈，更新 PnP 世界变换
+  void acceptFeedback(const aim::SelfState & fb) override;
+
   /// @brief 获取最近一帧图像（供外部调试用）
   const cv::Mat & lastFrame() const { return last_frame_; }
 

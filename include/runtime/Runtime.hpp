@@ -64,32 +64,28 @@ private:
         frame_timer_.reset();
 
         while (running_) {
-            double dt = frame_timer_.tick();
+            // ---- 0. 取最新反馈（非阻塞，Actuator 内部线程持续更新） ----
+            std::optional<SelfState> fb;
+            if (actuator_) fb = actuator_->feedback();
+            if (fb.has_value()) provider_->acceptFeedback(*fb);
 
             // ---- 1. 数据采集 ----
             InputType input;
             bool has_input = provider_->fetch(input);
 
             if (has_input) {
-                // ---- 2. 系统状态更新（消化新数据） ----
+                // ---- 2. 系统状态更新 ----
                 system_->update(input);
             }
+            if (fb.has_value()) system_->updateSelfState(*fb);
 
             // ---- 3. 目标选择 ----
             const auto& state = system_->getState();
             FinalTargetState target = selector_->select(state);
             Command cmd = solver_->solve(target, state);
 
-            // ---- 5. 发送指令到硬件 ----
-            if (actuator_) {
-                actuator_->send(cmd);
-
-                // ---- 6. 读取云台反馈，回写 System ----
-                auto feedback = actuator_->feedback();
-                if (feedback.has_value()) {
-                    system_->updateSelfState(*feedback);
-                }
-            }
+            // ---- 4. 发送指令到硬件 ----
+            if (actuator_) actuator_->send(cmd);
 
             // ---- 7. 帧率控制 ----
             auto elapsed = std::chrono::duration<double, std::milli>(

@@ -16,16 +16,14 @@
 /// 直觉：当云台能紧密跟踪目标预测轨迹时（误差小于阈值），可以开火。
 
 #include "AutoAimSolver.hpp"
+
+#include "../../include/core/DebugContext.hpp"
+#include <yaml-cpp/yaml.h>
 #include <cmath>
 #include <algorithm>
 #include <sstream>
 #include <stdexcept>
-
-#ifdef HAS_YAML_CPP
-#include <yaml-cpp/yaml.h>
-#else
-#include <opencv2/opencv.hpp>
-#endif
+#include <iostream>
 
 namespace {
 
@@ -157,10 +155,10 @@ aim::Command AutoAimSolver::solve(
     return cmd;
   }
 
-  // ---- 0. 弹丸速度 ----
-  double bullet_speed = 22.0;  // m/s，实际应由 Actuator 反馈提供
-  if (system_state.self.valid) {
-    // TODO: 从 self 反馈中读取 bullet_speed（当前 SelfState 不含此字段）
+  // ---- 0. 弹丸速度（来自 Actuator 反馈的 SelfState） ----
+  double bullet_speed = 22.0;  // m/s，默认值
+  if (system_state.self.valid && system_state.self.bullet_speed > 0) {
+    bullet_speed = system_state.self.bullet_speed;
   }
   if (bullet_speed < 10 || bullet_speed > 30) bullet_speed = 22.0;
 
@@ -211,6 +209,28 @@ aim::Command AutoAimSolver::solve(
   cmd.pitch     = pitch_solver_->state(0, MPC_HALF_HORIZON);
   cmd.pitch_vel = pitch_solver_->state(1, MPC_HALF_HORIZON);
   cmd.pitch_acc = pitch_solver_->control(MPC_HALF_HORIZON);
+
+  // 诊断日志
+  {
+    static int cnt = 0;
+    if (++cnt % 10 == 0) {
+      double ref_y  = traj(0, MPC_HALF_HORIZON) + yaw0;
+      double ref_p  = traj(2, MPC_HALF_HORIZON);
+      std::cout << "[Solver] aim=(" << aim_xyza[0] << "," << aim_xyza[1] << "," << aim_xyza[2] << ")m"
+                << " yaw=" << aim_xyza[3]*57.3
+                << " cmd(y=" << cmd.yaw*57.3 << " p=" << cmd.pitch*57.3 << ")deg"
+                << " ref(y=" << ref_y*57.3 << " p=" << ref_p*57.3 << ")deg"
+                << " bs=" << bullet_speed << "m/s" << std::endl;
+    }
+  }
+  // 推送曲线
+  aim::DebugContext::getInstance().pushCurveData("yaw_ref_deg",   static_cast<float>((traj(0, MPC_HALF_HORIZON) + yaw0) * 57.3));
+  aim::DebugContext::getInstance().pushCurveData("pitch_ref_deg", static_cast<float>(traj(2, MPC_HALF_HORIZON) * 57.3));
+  aim::DebugContext::getInstance().pushCurveData("yaw_cmd_deg",   static_cast<float>(cmd.yaw * 57.3));
+  aim::DebugContext::getInstance().pushCurveData("pitch_cmd_deg", static_cast<float>(cmd.pitch * 57.3));
+  aim::DebugContext::getInstance().pushCurveData("yaw_vel_degs",  static_cast<float>(cmd.yaw_vel * 57.3));
+  aim::DebugContext::getInstance().pushCurveData("pitch_vel_degs",static_cast<float>(cmd.pitch_vel * 57.3));
+  aim::DebugContext::getInstance().pushCurveData("fire_signal",   cmd.is_fine_aiming ? 1.0f : 0.0f);
 
   // ---- 8. 开火判断 ----
   // 比较参考轨迹与 MPC 轨迹在 HALF_HORIZON + SHOOT_OFFSET 处的偏差

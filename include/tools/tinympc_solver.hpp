@@ -50,13 +50,8 @@
 #endif
 
 #ifdef AIM_HAS_TINYMPC
-  // TinyMPC 的 C API 类型前置声明（避免污染全局命名空间）
-  struct TinySolver;
-  struct TinyCache;
-  struct TinySettings;
-  using tinyMatrix = Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
-  using tinyVector = Eigen::Matrix<double, Eigen::Dynamic, 1>;
-  using tinytype = double;
+  #include "tinympc/types.hpp"
+  #include "tinympc/tiny_api.hpp"
 #endif
 
 namespace aim {

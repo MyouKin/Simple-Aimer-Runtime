@@ -53,6 +53,7 @@ private:
   Eigen::Matrix3d debug_R_camera2gimbal_ = Eigen::Matrix3d::Identity();
   Eigen::Vector3d debug_t_camera2gimbal_ = Eigen::Vector3d::Zero();
   Eigen::Matrix3d debug_R_gimbal2world_  = Eigen::Matrix3d::Identity();
+  Eigen::Matrix3d debug_R_gimbal2imubody_ = Eigen::Matrix3d::Identity();
   cv::Mat last_raw_frame_;
 
   // ========================================================================

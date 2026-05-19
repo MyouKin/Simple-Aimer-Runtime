@@ -10,19 +10,6 @@ namespace tools {
 // ============================================================================
 #ifdef AIM_HAS_TINYMPC
 
-// TinyMPC C API（来自 spr_vision_try/tasks/auto_aim/planner/tinympc/tiny_api.hpp）
-extern "C" {
-int tiny_setup(TinySolver** solverp,
-               tinyMatrix Adyn, tinyMatrix Bdyn, tinyMatrix fdyn,
-               tinyMatrix Q, tinyMatrix R,
-               tinytype rho, int nx, int nu, int N, int verbose);
-int tiny_set_bound_constraints(TinySolver* solver,
-                               tinyMatrix x_min, tinyMatrix x_max,
-                               tinyMatrix u_min, tinyMatrix u_max);
-int tiny_set_x0(TinySolver* solver, tinyVector x0);
-int tiny_solve(TinySolver* solver);
-}
-
 TinyMPCSolver::TinyMPCSolver(double dt, int horizon)
   : horizon_(horizon), dt_(dt), solver_(nullptr) {
   x_traj_.resize(2, horizon_);
@@ -30,14 +17,12 @@ TinyMPCSolver::TinyMPCSolver(double dt, int horizon)
 }
 
 TinyMPCSolver::~TinyMPCSolver() {
-  // TinySolver 由 TinyMPC 内部管理，这里仅清空指针
   solver_ = nullptr;
 }
 
 void TinyMPCSolver::setup(double max_acc,
                           const Eigen::Vector2d & Q_diag,
                           const Eigen::VectorXd & R_diag) {
-  // 双积分器模型: A=[1 dt; 0 1], B=[0; dt]
   Eigen::MatrixXd A(2, 2), B(2, 1), f(2, 1);
   A << 1.0, dt_, 0.0, 1.0;
   B << 0.0, dt_;
@@ -46,10 +31,8 @@ void TinyMPCSolver::setup(double max_acc,
   Eigen::MatrixXd Q = Q_diag.asDiagonal();
   Eigen::MatrixXd R = R_diag.asDiagonal();
 
-  // 初始化求解器
   tiny_setup(&solver_, A, B, f, Q, R, 1.0, 2, 1, horizon_, 0);
 
-  // 状态无界，控制限幅
   Eigen::MatrixXd x_min = Eigen::MatrixXd::Constant(2, horizon_, -1e17);
   Eigen::MatrixXd x_max = Eigen::MatrixXd::Constant(2, horizon_,  1e17);
   Eigen::MatrixXd u_min = Eigen::MatrixXd::Constant(1, horizon_ - 1, -max_acc);
@@ -64,14 +47,13 @@ void TinyMPCSolver::solve(const Eigen::Vector2d & x0,
   Eigen::VectorXd x0_vec(2);
   x0_vec << x0(0), x0(1);
   tiny_set_x0(solver_, x0_vec);
-
-  solver_->work->Xref = x_ref;
+  tiny_set_x_ref(solver_, x_ref);
 
   tiny_solve(solver_);
 
-  // 缓存结果
-  x_traj_ = solver_->work->x.block(0, 0, 2, horizon_);
-  u_traj_ = solver_->work->u.block(0, 0, 1, horizon_ - 1);
+  // 从 solver->solution 读取结果（非 work，work 是 ADMM 内部变量）
+  x_traj_ = solver_->solution->x.block(0, 0, 2, horizon_);
+  u_traj_ = solver_->solution->u.block(0, 0, 1, horizon_ - 1);
 }
 
 double TinyMPCSolver::state(int dim, int step) const {
