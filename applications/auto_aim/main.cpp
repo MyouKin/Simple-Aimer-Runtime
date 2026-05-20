@@ -3,18 +3,22 @@
 ///
 /// 管道：AutoAimProvider → AutoAimSystem → AutoAimSelector → AutoAimSolver → AutoAimGimbal
 ///
-/// Actuator 内部使用 io::Gimbal（串口收发），后台线程持续读取云台反馈。
-/// Runtime 每帧调用 actuator->feedback() 获取最新 IMU 四元数，
-/// Provider 通过 acceptFeedback() 更新 PnP 世界变换。
+/// Debug 窗口按需创建（独立 OS 窗口，各自线程）：
+///   AimerLogger  —— 日志窗口（基于 spdlog）
+///   AimerImage   —— 图像窗口（多实例）
+///   AimerCurve   —— 曲线窗口（多坐标轴）
 
 #include "../../include/runtime/Runtime.hpp"
+#include "../../include/debug/AimerLogger.hpp"
+#include "../../include/debug/AimerImage.hpp"
+#include "../../include/debug/AimerCurve.hpp"
 #include "GimbalActuator.hpp"
 #include "AutoAimProvider/AutoAimProvider.hpp"
 #include "AutoAimSystem.hpp"
 #include "AutoAimSelector.hpp"
 #include "AutoAimSolver.hpp"
 
-#include "AutoAimProvider/io/gimbal/gimbal.hpp"
+#include "io/gimbal/gimbal.hpp"
 
 #include <iostream>
 #include <memory>
@@ -92,6 +96,7 @@ int main(int argc, char * argv[]) {
   std::cout << "[AutoAim] Loading config: " << config_path << std::endl;
   std::cout << "[AutoAim] Starting Runtime pipeline..." << std::endl;
 
+  // ---- 创建管道组件 ----
   auto provider  = std::make_shared<AutoAimProvider>(config_path);
   auto system    = std::make_shared<AutoAimSystem>(config_path);
   auto selector  = std::make_shared<AutoAimSelector>();
@@ -101,9 +106,25 @@ int main(int argc, char * argv[]) {
   aim::Runtime<ArmorList, AutoAimSystemState> runtime(
     provider, system, selector, solver, actuator, 100.0);
 
+  // ---- 启动管线 ----
   runtime.start();
   std::cout << "[AutoAim] Pipeline running. Press Ctrl+C to stop." << std::endl;
-  runtime.runUI();
+
+  // ---- Debug 窗口（独立 OS 窗口，按需打开） ----
+  auto& logger = aim::AimerLogger::instance();
+  logger.showWindow();  // 打开日志窗口
+
+  // 示例：图像窗口（按需创建，Provider 内部可调用 img.show(mat)）
+  // aim::AimerImage camera_view("Camera View");
+  // camera_view.openWindow();
+
+  // 示例：曲线窗口
+  // aim::AimerCurve trajectory("Trajectory");
+  // trajectory.openWindow();
+
+  // ---- 主线程阻塞等待退出 ----
+  aim::waitForShutdown();
+
   runtime.stop();
   std::cout << "[AutoAim] Exiting." << std::endl;
 

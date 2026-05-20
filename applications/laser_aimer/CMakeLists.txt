@@ -10,12 +10,12 @@ set(IMGUI_DIR "${CMAKE_SOURCE_DIR}/include/imgui-1.92.8")
 find_package(OpenCV REQUIRED)
 find_package(Eigen3 REQUIRED NO_MODULE)
 
-# MindVision Camera SDK
-set(MVSDK_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/include/mvsdk/include")
+# MindVision Camera SDK (shared from AutoAimProvider)
+set(MVSDK_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/applications/auto_aim/AutoAimProvider/mvsdk/include")
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|amd64")
-    set(MVSDK_LIB_DIR "${CMAKE_SOURCE_DIR}/include/mvsdk/lib/amd64")
+    set(MVSDK_LIB_DIR "${CMAKE_SOURCE_DIR}/applications/auto_aim/AutoAimProvider/mvsdk/lib/amd64")
 elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
-    set(MVSDK_LIB_DIR "${CMAKE_SOURCE_DIR}/include/mvsdk/lib/arm64")
+    set(MVSDK_LIB_DIR "${CMAKE_SOURCE_DIR}/applications/auto_aim/AutoAimProvider/mvsdk/lib/arm64")
 else()
     message(FATAL_ERROR "Unsupported architecture: ${CMAKE_SYSTEM_PROCESSOR}")
 endif()
@@ -32,6 +32,18 @@ else()
     # For Linux and Windows, standard CMake find_package for OpenGL and GLFW is usually sufficient
     find_package(OpenGL REQUIRED)
     find_package(glfw3 REQUIRED)
+endif()
+
+# ---- SPDLOG（AimerLogger 依赖） ----
+find_package(spdlog QUIET)
+if(NOT spdlog_FOUND)
+    if(DEFINED ENV{CONDA_PREFIX})
+        set(spdlog_DIR "$ENV{CONDA_PREFIX}/share/spdlog")
+        find_package(spdlog QUIET)
+    endif()
+endif()
+if(NOT spdlog_FOUND)
+    message(FATAL_ERROR "LaserAimer: spdlog not found. Install: sudo apt install libspdlog-dev")
 endif()
 
 include_directories(
@@ -77,6 +89,8 @@ if(APPLE)
         ${OPENGL_LIBRARY}
         ${IOKIT_LIBRARY}
         ${COREVIDEO_LIBRARY}
+        spdlog
+        fmt
     )
 else()
     target_link_directories(laser_aimer PRIVATE ${MVSDK_LIB_DIR})
@@ -86,5 +100,8 @@ else()
         glfw
         ${OPENGL_LIBRARIES}
         MVSDK
+        spdlog
+        fmt
+        pthread
     )
 endif()

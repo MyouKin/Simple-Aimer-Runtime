@@ -82,10 +82,11 @@ include_directories(
     ${EIGEN3_INCLUDE_DIRS}
     ${IMGUI_DIR}
     ${IMGUI_DIR}/backends
-    ${PROVIDER_DIR}                                    # for AutoAimProvider/io/camera.hpp etc.
-    ${PROVIDER_DIR}/io/mindvision/include               # for CameraApi.h (MindVision SDK)
-    ${PROVIDER_DIR}/io/hikrobot/include                 # for MvCameraControl.h (HikRobot SDK)
-    ${PROVIDER_DIR}/io/serial/include                   # for serial.h (串口库)
+    ${AUTO_AIM_DIR}                                    # for io/ tools/ etc. (moved from Provider)
+    ${PROVIDER_DIR}                                    # for AutoAimProvider/*.hpp
+    ${AUTO_AIM_DIR}/io/mindvision/include               # for CameraApi.h (MindVision SDK)
+    ${AUTO_AIM_DIR}/io/hikrobot/include                 # for MvCameraControl.h (HikRobot SDK)
+    ${AUTO_AIM_DIR}/io/serial/include                   # for serial.h (串口库)
 )
 
 # ---- TinyMPC（位于 include/tinympc/，spr_vision_try 移植） ----
@@ -124,14 +125,14 @@ file(GLOB PROVIDER_SOURCES
     "${PROVIDER_DIR}/yolos/yolov5.cpp"
     "${PROVIDER_DIR}/yolos/yolov8.cpp"
     "${PROVIDER_DIR}/yolos/yolo11.cpp"
-    "${PROVIDER_DIR}/io/gimbal/gimbal.cpp"
+    "${AUTO_AIM_DIR}/io/gimbal/gimbal.cpp"
 )
 
 # 串口库（wjwwood/serial）
 file(GLOB SERIAL_SOURCES
-    "${PROVIDER_DIR}/io/serial/src/serial.cc"
-    "${PROVIDER_DIR}/io/serial/src/impl/unix.cc"
-    "${PROVIDER_DIR}/io/serial/src/impl/list_ports/list_ports_linux.cc"
+    "${AUTO_AIM_DIR}/io/serial/src/serial.cc"
+    "${AUTO_AIM_DIR}/io/serial/src/impl/unix.cc"
+    "${AUTO_AIM_DIR}/io/serial/src/impl/list_ports/list_ports_linux.cc"
 )
 
 # TinyMPC 求解器
@@ -144,16 +145,16 @@ file(GLOB TINYMPC_SOURCES
 
 # AutoAimProvider 相机驱动（io: camera + mindvision + hikrobot）
 file(GLOB PROVIDER_IO_SOURCES
-    "${PROVIDER_DIR}/io/camera.cpp"
-    "${PROVIDER_DIR}/io/mindvision/mindvision.cpp"
-    "${PROVIDER_DIR}/io/hikrobot/hikrobot.cpp"
+    "${AUTO_AIM_DIR}/io/camera.cpp"
+    "${AUTO_AIM_DIR}/io/mindvision/mindvision.cpp"
+    "${AUTO_AIM_DIR}/io/hikrobot/hikrobot.cpp"
 )
 
 # AutoAimProvider 共享工具（logger / img_tools / math_tools 等）
 file(GLOB PROVIDER_TOOLS_SOURCES
-    "${PROVIDER_DIR}/tools/logger.cpp"
-    "${PROVIDER_DIR}/tools/math_tools.cpp"
-    "${PROVIDER_DIR}/tools/img_tools.cpp"
+    "${AUTO_AIM_DIR}/tools/logger.cpp"
+    "${AUTO_AIM_DIR}/tools/math_tools.cpp"
+    "${AUTO_AIM_DIR}/tools/img_tools.cpp"
 )
 
 # Runtime 共享工具（EKF、弹道、MPC 等）
@@ -183,11 +184,11 @@ target_compile_definitions(auto_aim PRIVATE GL_SILENCE_DEPRECATION)
 # ---- 链接 ----
 # ---- MindVision / HikRobot SDK 库路径（根据架构） ----
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64")
-    set(MINDVISION_LIB_DIR "${PROVIDER_DIR}/io/mindvision/lib/amd64")
-    set(HIKROBOT_LIB_DIR "${PROVIDER_DIR}/io/hikrobot/lib/amd64")
+    set(MINDVISION_LIB_DIR "${AUTO_AIM_DIR}/io/mindvision/lib/amd64")
+    set(HIKROBOT_LIB_DIR "${AUTO_AIM_DIR}/io/hikrobot/lib/amd64")
 elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
-    set(MINDVISION_LIB_DIR "${PROVIDER_DIR}/io/mindvision/lib/arm64")
-    set(HIKROBOT_LIB_DIR "${PROVIDER_DIR}/io/hikrobot/lib/arm64")
+    set(MINDVISION_LIB_DIR "${AUTO_AIM_DIR}/io/mindvision/lib/arm64")
+    set(HIKROBOT_LIB_DIR "${AUTO_AIM_DIR}/io/hikrobot/lib/arm64")
 else()
     message(WARNING "Unknown architecture, mindvision/hikrobot libs may not link!")
 endif()

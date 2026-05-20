@@ -3,7 +3,7 @@
 
 #include "../../include/pipeline/DataProvider.hpp"
 #include "../../include/core/types.hpp"
-#include "../../include/mvsdk/include/CameraApi.h"
+#include "../../auto_aim/AutoAimProvider/mvsdk/include/CameraApi.h"
 #include <opencv2/opencv.hpp>
 #include <optional>
 #include <vector>

@@ -1,21 +1,38 @@
 #ifndef AIM_FRAMEWORK_RUNTIME_RUNTIME_HPP
 #define AIM_FRAMEWORK_RUNTIME_RUNTIME_HPP
 
+/// @file Runtime.hpp
+/// @brief 管道运行时 —— 纯管线循环，不耦合任何 Debug UI
+///
+/// Debug 窗口（AimerLogger / AimerImage / AimerCurve）由应用层按需创建，
+/// 各自以独立操作系统窗口运行在独立线程中，通过统一接口交互。
+
 #include "../pipeline/DataProvider.hpp"
 #include "../pipeline/System.hpp"
 #include "../pipeline/Selector.hpp"
 #include "../pipeline/Solver.hpp"
 #include "../pipeline/Actuator.hpp"
 #include "../core/FrameTimer.hpp"
-#include "../debug/ImGuiDebugger.hpp"
 
 #include <memory>
 #include <atomic>
 #include <thread>
 #include <chrono>
-#include <iostream>
+#include <csignal>
 
 namespace aim {
+
+/// @brief 阻塞等待 SIGINT / SIGTERM（Ctrl+C），便于 main 线程保持活跃
+inline void waitForShutdown() {
+    static std::atomic<bool> shutdown_flag{false};
+    static const auto sig_handler = +[](int) { shutdown_flag = true; };
+    std::signal(SIGINT,  sig_handler);
+    std::signal(SIGTERM, sig_handler);
+
+    while (!shutdown_flag) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+}
 
 template <typename InputType, typename SystemStateType>
 class Runtime {
@@ -34,30 +51,24 @@ public:
         , loop_period_ms_(loop_rate_hz > 0.0 ? (1000.0 / loop_rate_hz) : 10.0)
         , running_(false) {}
 
-    ~Runtime() {
-        stop();
-    }
+    ~Runtime() { stop(); }
 
     void start() {
         if (running_) return;
         running_ = true;
-
         pipeline_thread_ = std::thread(&Runtime::pipelineLoop, this);
     }
 
     void stop() {
         running_ = false;
-        if (pipeline_thread_.joinable()) {
-            pipeline_thread_.join();
-        }
-    }
-
-    void runUI() {
-        debugger_.run();
+        if (pipeline_thread_.joinable()) pipeline_thread_.join();
     }
 
     /// @brief 获取平滑后的帧间隔（秒），可用于外部监控
     double frameDt() const { return frame_timer_.dt(); }
+
+    /// @brief 管线是否在运行
+    bool isRunning() const { return running_; }
 
 private:
     void pipelineLoop() {
@@ -87,7 +98,7 @@ private:
             // ---- 4. 发送指令到硬件 ----
             if (actuator_) actuator_->send(cmd);
 
-            // ---- 7. 帧率控制 ----
+            // ---- 5. 帧率控制 ----
             auto elapsed = std::chrono::duration<double, std::milli>(
                 std::chrono::high_resolution_clock::now() - frame_timer_.lastTickPoint()).count();
             double remaining_ms = loop_period_ms_ - elapsed;
@@ -107,7 +118,6 @@ private:
     double loop_period_ms_;
     std::atomic<bool> running_;
     std::thread pipeline_thread_;
-    ImGuiDebugger debugger_;
     FrameTimer frame_timer_;
 };
 

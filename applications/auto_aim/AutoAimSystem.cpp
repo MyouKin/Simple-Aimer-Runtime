@@ -22,7 +22,7 @@
 #include <cmath>
 #include <numeric>
 
-#include "../AutoAimProvider/tools/logger.hpp"
+#include "tools/logger.hpp"
 
 namespace {
 

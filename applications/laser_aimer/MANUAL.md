@@ -32,9 +32,9 @@ Laser Aimer 是基于 **Simple-Aimer-Runtime** 框架开发的激光瞄准应用
 # 系统库
 sudo apt install libopencv-dev libeigen3-dev libglfw3-dev
 
-# MVS SDK (已预装于 include/mvsdk/)
+# MVS SDK (已预装于 applications/auto_aim/AutoAimProvider/mvsdk/)
 # 如需重新安装:
-# sudo bash include/mvsdk/install.sh
+# sudo bash applications/auto_aim/AutoAimProvider/mvsdk/install.sh
 # 然后重新插拔相机
 ```
 
