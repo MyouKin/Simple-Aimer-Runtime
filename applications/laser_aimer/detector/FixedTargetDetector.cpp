@@ -42,6 +42,22 @@ double normPoint(const cv::Point2f & p) {
   return std::sqrt(p.x * p.x + p.y * p.y);
 }
 
+void publishRoiDebugImages(const cv::Mat & roi,
+                           const cv::Mat & hsv_view,
+                           const cv::Mat & mask,
+                           const cv::Mat & closed) {
+  cv::Mat mask_bgr;
+  cv::Mat closed_bgr;
+  cv::cvtColor(mask, mask_bgr, cv::COLOR_GRAY2BGR);
+  cv::cvtColor(closed, closed_bgr, cv::COLOR_GRAY2BGR);
+
+  cv::Mat roi_hsv_mask;
+  cv::hconcat(std::vector<cv::Mat>{roi, hsv_view, mask_bgr}, roi_hsv_mask);
+  auto & debug = aim::DebugContext::getInstance();
+  debug.setImage("ROI HSV Mask", roi_hsv_mask);
+  debug.setImage("ROI Closed", closed_bgr);
+}
+
 }  // namespace
 
 struct FixedTargetDetector::Strip {
@@ -129,10 +145,7 @@ std::optional<FixedTarget> FixedTargetDetector::detectInRoi(
   cv::Mat closed;
   cv::morphologyEx(mask, closed, cv::MORPH_CLOSE, kernel);
 
-  aim::DebugContext::getInstance().setImage("FixedTarget ROI", roi);
-  aim::DebugContext::getInstance().setImage("FixedTarget HSV", hsv_view);
-  aim::DebugContext::getInstance().setImage("FixedTarget Mask", mask);
-  aim::DebugContext::getInstance().setImage("FixedTarget Closed", closed);
+  publishRoiDebugImages(roi, hsv_view, mask, closed);
 
   std::vector<std::vector<cv::Point>> contours;
   cv::findContours(closed, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);

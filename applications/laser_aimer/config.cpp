@@ -71,6 +71,10 @@ bool loadConfig(const std::string & path, LaserAimerConfig * out) {
   readNode(fs, "deadband_px", &out->control.deadband_px);
   readNode(fs, "max_angle_rate", &out->control.max_angle_rate);
   readNode(fs, "lowpass_alpha", &out->control.lowpass_alpha);
+  readNode(fs, "use_target_kalman", &out->control.use_target_kalman);
+  readNode(fs, "target_kalman_accel_noise", &out->control.target_kalman_accel_noise);
+  readNode(fs, "target_kalman_meas_noise", &out->control.target_kalman_meas_noise);
+  readNode(fs, "target_kalman_reset_dt_ms", &out->control.target_kalman_reset_dt_ms);
   readNode(fs, "yaw_sign", &out->control.yaw_sign);
   readNode(fs, "pitch_sign", &out->control.pitch_sign);
   readNode(fs, "ctrl_dt_nominal_ms", &out->control.ctrl_dt_nominal_ms);

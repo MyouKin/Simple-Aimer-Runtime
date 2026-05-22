@@ -38,6 +38,35 @@ public:
         return true;
     }
 
+    void setPoint(const std::string& name, const cv::Point2f& point, bool valid) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (valid) {
+            points_[name] = point;
+        } else {
+            points_.erase(name);
+        }
+    }
+
+    bool getPoint(const std::string& name, cv::Point2f& out_point) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        const auto it = points_.find(name);
+        if (it == points_.end()) return false;
+        out_point = it->second;
+        return true;
+    }
+
+    void setText(const std::string& name, const std::string& text) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        texts_[name] = text;
+    }
+
+    std::string getText(const std::string& name) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        const auto it = texts_.find(name);
+        if (it == texts_.end()) return {};
+        return it->second;
+    }
+
     // 记录图表数据 (如 yaw/pitch 变化)
     void pushCurveData(const std::string& name, float value) {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -78,6 +107,8 @@ private:
 
     std::unordered_map<std::string, CurveData> curves_;
     std::unordered_map<std::string, cv::Mat> images_;
+    std::unordered_map<std::string, cv::Point2f> points_;
+    std::unordered_map<std::string, std::string> texts_;
 };
 
 } // namespace aim

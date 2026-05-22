@@ -16,21 +16,6 @@ camera_timeout_ms: 100
 drone_backend: "trt_engine"
 drone_model_path: "C:/Users/25176/Resources/Projects/Robomaster/Simple-Aimer-Runtime/applications/laser_aimer/RM-Plane-yolo26n-p2-2026-04-03.pt"
 drone_engine_path: "C:/Users/25176/Resources/Projects/Robomaster/Simple-Aimer-Runtime/applications/laser_aimer/RM-Plane-yolo26n-p2-2026-04-03.engine"
-drone_input_width: 640
-drone_input_height: 640
-drone_conf_threshold: 0.25
-drone_nms_threshold: 0.45
-drone_top_k: 1
-drone_max_det: 300
-drone_device_id: 0
-drone_max_batch: 1
-drone_streams: 1
-drone_auto_streams: 0
-drone_num_classes: 1
-drone_apply_sigmoid: 0
-drone_preprocess: "letterbox"
-drone_output_mode: "auto"
-drone_box_format: "cxcywh"
 
 # Fixed target detector, ported from detectortest.py.
 roi_padding_ratio: 0.08

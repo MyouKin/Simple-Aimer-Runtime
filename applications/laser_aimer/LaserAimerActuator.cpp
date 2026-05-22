@@ -1,5 +1,6 @@
 #include "LaserAimerActuator.hpp"
 
+#include "../../include/core/DebugContext.hpp"
 #include "io/GimbalSerial.hpp"
 #include "serial/serial.h"
 
@@ -22,6 +23,28 @@ std::string hexBytes(const uint8_t * data, size_t len, size_t max_len = 64) {
     oss << std::setw(2) << static_cast<int>(data[i]);
   }
   if (shown < len) oss << " ... +" << std::dec << (len - shown) << " bytes";
+  return oss.str();
+}
+
+std::string formatCommandStatus(const char * prefix, const GimbalCommand & cmd) {
+  std::ostringstream oss;
+  oss << prefix
+      << " pitch=" << std::fixed << std::setprecision(3) << cmd.pitch
+      << " yaw=" << cmd.yaw
+      << " pr=" << cmd.pitch_rate
+      << " yr=" << cmd.yaw_rate
+      << " t=" << cmd.timestamp;
+  return oss.str();
+}
+
+std::string formatStateStatus(const char * prefix, const GimbalState & state) {
+  std::ostringstream oss;
+  oss << prefix
+      << " pitch=" << std::fixed << std::setprecision(3) << state.pitch
+      << " yaw=" << state.yaw
+      << " pr=" << state.pitch_rate
+      << " yr=" << state.yaw_rate
+      << " t=" << state.timestamp;
   return oss.str();
 }
 
@@ -66,6 +89,7 @@ void LaserAimerActuator::send(const aim::Command & cmd) {
   uint8_t packet[gimbal_serial::kTxFrameSize]{};
   gimbal_serial::packGimbalCommand(out, packet);
   const size_t written = serial_->write(packet, gimbal_serial::kTxFrameSize);
+  aim::DebugContext::getInstance().setText("Serial TX", formatCommandStatus("TX", out));
 
   if (shouldLogSerial(&last_tx_log_ms_)) {
     std::cout << "[Serial TX] wrote=" << written
@@ -106,6 +130,7 @@ std::optional<aim::SelfState> LaserAimerActuator::feedback() {
     if (parser_.push(buf.data(), n, &state)) {
       last_state_ = state;
       has_state_ = true;
+      aim::DebugContext::getInstance().setText("Serial RX", formatStateStatus("RX", state));
       if (log_rx) {
         std::cout << "[Serial RX parsed]"
                   << " pitch=" << state.pitch

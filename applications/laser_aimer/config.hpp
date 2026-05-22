@@ -41,6 +41,11 @@ struct LaserAimerConfig {
   SerialConfig serial;
   int min_detect_count = 1;
   int max_lost_count = 20;
+  bool target_kalman_enable = true;
+  double target_kalman_process_noise = 80.0;
+  double target_kalman_measurement_noise = 9.0;
+  double target_kalman_error = 100.0;
+  double target_kalman_max_dt_ms = 100.0;
   double loop_rate_hz = 100.0;
   bool show_debug = true;
 };
