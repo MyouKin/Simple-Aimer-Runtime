@@ -8,6 +8,8 @@
 #include <imgui_impl_opengl3.h>
 #include <GLFW/glfw3.h>
 
+#include <algorithm>
+
 namespace aim {
 
 // ---- GLFW 一次性初始化 ----
@@ -21,6 +23,10 @@ static void ensureGlfw() {
 
 #ifndef GL_BGR
 #define GL_BGR 0x80E0
+#endif
+
+#ifndef GL_BGRA
+#define GL_BGRA 0x80E1
 #endif
 
 AimerImage::AimerImage(const std::string& name) : name_(name) {}
@@ -60,7 +66,7 @@ void AimerImage::windowThread() {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
 #endif
 
-    window_ = glfwCreateWindow(640, 480, name_.c_str(), nullptr, nullptr);
+    window_ = glfwCreateWindow(960, 720, name_.c_str(), nullptr, nullptr);
     if (!window_) { running_ = false; return; }
 
     glfwMakeContextCurrent(window_);
@@ -125,16 +131,18 @@ void AimerImage::windowThread() {
             }
 
             // 按比例缩放以适配窗口
-            float avail_w = ImGui::GetContentRegionAvail().x;
-            float avail_h = ImGui::GetContentRegionAvail().y;
-            float img_w = (float)local.cols;
-            float img_h = (float)local.rows;
-            float scale = std::min(avail_w / img_w, avail_h / img_h);
-            if (scale > 0.0f && scale < 1.0f) {
-                img_w *= scale;
-                img_h *= scale;
+            ImVec2 avail = ImGui::GetContentRegionAvail();
+            float img_w = static_cast<float>(local.cols);
+            float img_h = static_cast<float>(local.rows);
+            float scale = std::min(avail.x / img_w, avail.y / img_h);
+            if (scale > 0.0f && avail.x > 1.0f && avail.y > 1.0f) {
+                ImVec2 image_size(img_w * scale, img_h * scale);
+                ImVec2 cursor = ImGui::GetCursorPos();
+                ImGui::SetCursorPos(ImVec2(
+                    cursor.x + std::max(0.0f, (avail.x - image_size.x) * 0.5f),
+                    cursor.y + std::max(0.0f, (avail.y - image_size.y) * 0.5f)));
+                ImGui::Image((void*)(intptr_t)texture_id_, image_size);
             }
-            ImGui::Image((void*)(intptr_t)texture_id_, ImVec2(img_w, img_h));
         } else {
             ImGui::TextUnformatted("(no image)");
         }

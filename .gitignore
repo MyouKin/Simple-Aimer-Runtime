@@ -4,3 +4,4 @@ build/
 references/spr_vision_try/
 references/LaserTracking-2026/
 references/LaserTracking-2026-2026.04.05/
+applications/laser_aimer/build_trt_nmake/
