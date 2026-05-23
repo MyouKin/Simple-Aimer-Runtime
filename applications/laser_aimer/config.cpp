@@ -21,7 +21,6 @@ void readTeam(const cv::FileStorage & fs, FixedTargetConfig * cfg) {
   } else if (team == "blue" || team == "BLUE" || team == "Blue") {
     cfg->target_team = 1;
   }
-  readNode(fs, "target_team_id", &cfg->target_team);
   cfg->target_team = cfg->target_team == 0 ? 0 : 1;
 }
 
