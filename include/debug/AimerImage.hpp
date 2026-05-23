@@ -17,6 +17,7 @@
 #include <opencv2/opencv.hpp>
 
 struct GLFWwindow;
+struct ImGuiContext;
 
 namespace aim {
 
@@ -43,10 +44,12 @@ private:
     std::mutex mutex_;
     unsigned int texture_id_ = 0;
     bool texture_created_ = false;
+    cv::Size last_image_size_{};
 
     std::thread thread_;
     std::atomic<bool> running_{false};
     GLFWwindow* window_ = nullptr;
+    ImGuiContext* imgui_context_ = nullptr;
 };
 
 } // namespace aim

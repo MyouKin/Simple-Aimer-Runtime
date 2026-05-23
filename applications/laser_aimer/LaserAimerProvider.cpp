@@ -3,6 +3,8 @@
 #include "../../include/core/DebugContext.hpp"
 
 #include <algorithm>
+#include <iostream>
+#include <opencv2/calib3d.hpp>
 #include <opencv2/imgproc.hpp>
 
 namespace laser_aimer {
@@ -25,13 +27,56 @@ void LaserAimerProvider::updateFixedTargetConfig(const FixedTargetConfig & cfg) 
   fixed_target_detector_.setConfig(cfg);
 }
 
+cv::Mat LaserAimerProvider::applyUndistort(const cv::Mat & frame) {
+  if (!cfg_.undistort.enabled || frame.empty()) return frame;
+
+  const cv::Size frame_size = frame.size();
+  if (undistort_map1_.empty() || undistort_map_size_ != frame_size) {
+    const auto & u = cfg_.undistort;
+    if (u.raw_fx <= 0.0 || u.raw_fy <= 0.0 || u.new_fx <= 0.0 || u.new_fy <= 0.0) {
+      std::cerr << "[LaserAimer] undistort_enable is set, but camera parameters are invalid; "
+                << "using raw frame.\n";
+      return frame;
+    }
+
+    const cv::Mat camera_matrix = (cv::Mat_<double>(3, 3) <<
+      u.raw_fx, 0.0, u.raw_cx,
+      0.0, u.raw_fy, u.raw_cy,
+      0.0, 0.0, 1.0);
+    const cv::Mat dist_coeffs = (cv::Mat_<double>(1, 5) <<
+      u.k1, u.k2, u.p1, u.p2, u.k3);
+    const cv::Mat new_camera_matrix = (cv::Mat_<double>(3, 3) <<
+      u.new_fx, 0.0, u.new_cx,
+      0.0, u.new_fy, u.new_cy,
+      0.0, 0.0, 1.0);
+
+    cv::initUndistortRectifyMap(
+      camera_matrix,
+      dist_coeffs,
+      cv::Mat::eye(3, 3, CV_64F),
+      new_camera_matrix,
+      frame_size,
+      CV_16SC2,
+      undistort_map1_,
+      undistort_map2_);
+    undistort_map_size_ = frame_size;
+    std::cout << "[LaserAimer] Undistort map initialized for "
+              << frame_size.width << "x" << frame_size.height << "\n";
+  }
+
+  cv::Mat undistorted;
+  cv::remap(frame, undistorted, undistort_map1_, undistort_map2_, cv::INTER_LINEAR);
+  return undistorted;
+}
+
 bool LaserAimerProvider::fetch(LaserAimerInput & out_data) {
-  cv::Mat frame;
+  cv::Mat raw_frame;
   SteadyTimePoint timestamp;
-  if (!camera_->read(frame, timestamp) || frame.empty()) {
+  if (!camera_->read(raw_frame, timestamp) || raw_frame.empty()) {
     return false;
   }
 
+  cv::Mat frame = applyUndistort(raw_frame);
   out_data.frame = frame;
   out_data.timestamp = timestamp;
   out_data.timestamp_ms = nowMs();

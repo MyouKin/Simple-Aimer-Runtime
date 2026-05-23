@@ -31,8 +31,26 @@ struct SerialConfig {
   int debug_interval_ms = 100;
 };
 
+struct UndistortConfig {
+  bool enabled = false;
+  double raw_fx = 0.0;
+  double raw_fy = 0.0;
+  double raw_cx = 0.0;
+  double raw_cy = 0.0;
+  double k1 = 0.0;
+  double k2 = 0.0;
+  double p1 = 0.0;
+  double p2 = 0.0;
+  double k3 = 0.0;
+  double new_fx = 0.0;
+  double new_fy = 0.0;
+  double new_cx = 0.0;
+  double new_cy = 0.0;
+};
+
 struct LaserAimerConfig {
   CameraConfig camera;
+  UndistortConfig undistort;
   DroneDetectorConfig drone_detector;
   FixedTargetConfig fixed_target;
   ControlConfig control;

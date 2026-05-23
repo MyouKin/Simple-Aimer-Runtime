@@ -13,6 +13,18 @@ void readNode(const cv::FileStorage & fs, const std::string & name, T * value) {
   }
 }
 
+void readTeam(const cv::FileStorage & fs, FixedTargetConfig * cfg) {
+  std::string team;
+  readNode(fs, "target_team", &team);
+  if (team == "red" || team == "RED" || team == "Red") {
+    cfg->target_team = 0;
+  } else if (team == "blue" || team == "BLUE" || team == "Blue") {
+    cfg->target_team = 1;
+  }
+  readNode(fs, "target_team_id", &cfg->target_team);
+  cfg->target_team = cfg->target_team == 0 ? 0 : 1;
+}
+
 }  // namespace
 
 bool loadConfig(const std::string & path, LaserAimerConfig * out) {
@@ -31,6 +43,21 @@ bool loadConfig(const std::string & path, LaserAimerConfig * out) {
   readNode(fs, "gamma", &out->camera.gamma);
   readNode(fs, "flip_code", &out->camera.flip_code);
   readNode(fs, "camera_timeout_ms", &out->camera.timeout_ms);
+
+  readNode(fs, "undistort_enable", &out->undistort.enabled);
+  readNode(fs, "raw_fx", &out->undistort.raw_fx);
+  readNode(fs, "raw_fy", &out->undistort.raw_fy);
+  readNode(fs, "raw_cx", &out->undistort.raw_cx);
+  readNode(fs, "raw_cy", &out->undistort.raw_cy);
+  readNode(fs, "dist_k1", &out->undistort.k1);
+  readNode(fs, "dist_k2", &out->undistort.k2);
+  readNode(fs, "dist_p1", &out->undistort.p1);
+  readNode(fs, "dist_p2", &out->undistort.p2);
+  readNode(fs, "dist_k3", &out->undistort.k3);
+  readNode(fs, "undistort_fx", &out->undistort.new_fx);
+  readNode(fs, "undistort_fy", &out->undistort.new_fy);
+  readNode(fs, "undistort_cx", &out->undistort.new_cx);
+  readNode(fs, "undistort_cy", &out->undistort.new_cy);
 
   readNode(fs, "drone_backend", &out->drone_detector.backend);
   readNode(fs, "drone_model_path", &out->drone_detector.model_path);
@@ -52,20 +79,31 @@ bool loadConfig(const std::string & path, LaserAimerConfig * out) {
   readNode(fs, "drone_box_format", &out->drone_detector.box_format);
 
   readNode(fs, "roi_padding_ratio", &out->fixed_target.roi_padding_ratio);
-  readNode(fs, "h_min", &out->fixed_target.h_min);
-  readNode(fs, "h_max", &out->fixed_target.h_max);
-  readNode(fs, "s_min", &out->fixed_target.s_min);
-  readNode(fs, "s_max", &out->fixed_target.s_max);
-  readNode(fs, "v_min", &out->fixed_target.v_min);
-  readNode(fs, "v_max", &out->fixed_target.v_max);
+  readTeam(fs, &out->fixed_target);
+  readNode(fs, "red_h_min", &out->fixed_target.red_hsv.h_min);
+  readNode(fs, "red_h_max", &out->fixed_target.red_hsv.h_max);
+  readNode(fs, "red_s_min", &out->fixed_target.red_hsv.s_min);
+  readNode(fs, "red_s_max", &out->fixed_target.red_hsv.s_max);
+  readNode(fs, "red_v_min", &out->fixed_target.red_hsv.v_min);
+  readNode(fs, "red_v_max", &out->fixed_target.red_hsv.v_max);
+  readNode(fs, "blue_h_min", &out->fixed_target.blue_hsv.h_min);
+  readNode(fs, "blue_h_max", &out->fixed_target.blue_hsv.h_max);
+  readNode(fs, "blue_s_min", &out->fixed_target.blue_hsv.s_min);
+  readNode(fs, "blue_s_max", &out->fixed_target.blue_hsv.s_max);
+  readNode(fs, "blue_v_min", &out->fixed_target.blue_hsv.v_min);
+  readNode(fs, "blue_v_max", &out->fixed_target.blue_hsv.v_max);
+  readNode(fs, "h_min", &out->fixed_target.blue_hsv.h_min);
+  readNode(fs, "h_max", &out->fixed_target.blue_hsv.h_max);
+  readNode(fs, "s_min", &out->fixed_target.blue_hsv.s_min);
+  readNode(fs, "s_max", &out->fixed_target.blue_hsv.s_max);
+  readNode(fs, "v_min", &out->fixed_target.blue_hsv.v_min);
+  readNode(fs, "v_max", &out->fixed_target.blue_hsv.v_max);
+  readNode(fs, "open_kernel", &out->fixed_target.open_kernel);
   readNode(fs, "close_kernel", &out->fixed_target.close_kernel);
   readNode(fs, "min_area", &out->fixed_target.min_area);
   readNode(fs, "max_area", &out->fixed_target.max_area);
   readNode(fs, "min_aspect", &out->fixed_target.min_aspect);
   readNode(fs, "max_aspect", &out->fixed_target.max_aspect);
-  readNode(fs, "max_angle_diff_deg", &out->fixed_target.max_angle_diff_deg);
-  readNode(fs, "min_dist_ratio", &out->fixed_target.min_dist_ratio);
-  readNode(fs, "max_dist_ratio", &out->fixed_target.max_dist_ratio);
 
   readNode(fs, "kp", &out->control.kp);
   readNode(fs, "deadband_px", &out->control.deadband_px);

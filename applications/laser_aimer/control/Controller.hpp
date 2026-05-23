@@ -15,7 +15,7 @@ struct ControlConfig {
   double max_angle_rate = 180.0;
   double lowpass_alpha = 0.45;
   bool use_target_kalman = true;
-  double target_kalman_accel_noise = 800.0;
+  double target_kalman_accel_noise = 80.0;
   double target_kalman_meas_noise = 8.0;
   double target_kalman_reset_dt_ms = 250.0;
   double yaw_sign = -1.0;

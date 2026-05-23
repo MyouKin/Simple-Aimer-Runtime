@@ -9,22 +9,26 @@
 
 namespace laser_aimer {
 
-struct FixedTargetConfig {
-  double roi_padding_ratio = 0.08;
+struct HsvThreshold {
   int h_min = 0;
   int h_max = 179;
   int s_min = 0;
   int s_max = 255;
   int v_min = 200;
   int v_max = 255;
-  int close_kernel = 10;
+};
+
+struct FixedTargetConfig {
+  double roi_padding_ratio = 0.08;
+  int target_team = 1;  // 0 red, 1 blue
+  HsvThreshold red_hsv{170, 10, 0, 255, 200, 255};
+  HsvThreshold blue_hsv{100, 140, 0, 255, 200, 255};
+  int open_kernel = 3;
+  int close_kernel = 5;
   double min_area = 50.0;
-  double max_area = 3000.0;
-  double min_aspect = 1.5;
-  double max_aspect = 10.0;
-  double max_angle_diff_deg = 15.0;
-  double min_dist_ratio = 1.0;
-  double max_dist_ratio = 6.0;
+  double max_area = 5000.0;
+  double min_aspect = 0.5;
+  double max_aspect = 1.15;
 };
 
 class FixedTargetDetector {
@@ -39,7 +43,6 @@ public:
                                     cv::Mat * debug = nullptr) const;
 
 private:
-  struct Strip;
   std::optional<FixedTarget> detectInRoi(const cv::Mat & roi,
                                          const cv::Rect & roi_rect,
                                          const FixedTargetConfig & cfg,

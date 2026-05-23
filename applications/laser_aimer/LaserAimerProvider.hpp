@@ -9,6 +9,7 @@
 #include "types.hpp"
 
 #include <memory>
+#include <opencv2/core.hpp>
 
 namespace laser_aimer {
 
@@ -19,10 +20,15 @@ public:
   void updateFixedTargetConfig(const FixedTargetConfig & cfg);
 
 private:
+  cv::Mat applyUndistort(const cv::Mat & frame);
+
   LaserAimerConfig cfg_;
   std::unique_ptr<FrameSource> camera_;
   DroneDetector drone_detector_;
   FixedTargetDetector fixed_target_detector_;
+  cv::Size undistort_map_size_{};
+  cv::Mat undistort_map1_;
+  cv::Mat undistort_map2_;
 };
 
 }  // namespace laser_aimer

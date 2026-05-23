@@ -9,6 +9,7 @@
 #include <GLFW/glfw3.h>
 
 #include <algorithm>
+#include <mutex>
 
 namespace aim {
 
@@ -19,6 +20,11 @@ static void ensureGlfw() {
         return true;
     }();
     (void)ok;
+}
+
+static std::mutex& renderMutex() {
+    static std::mutex mutex;
+    return mutex;
 }
 
 #ifndef GL_BGR
@@ -53,6 +59,7 @@ bool AimerImage::isWindowOpen() const { return running_; }
 
 void AimerImage::windowThread() {
     ensureGlfw();
+    std::unique_lock<std::mutex> render_lock(renderMutex());
 
 #if __APPLE__
     const char* glsl = "#version 150";
@@ -73,7 +80,8 @@ void AimerImage::windowThread() {
     glfwSwapInterval(1);
 
     IMGUI_CHECKVERSION();
-    ImGui::CreateContext();
+    imgui_context_ = ImGui::CreateContext();
+    ImGui::SetCurrentContext(imgui_context_);
     ImGuiIO& io = ImGui::GetIO();
     io.IniFilename = nullptr;
     io.FontGlobalScale = 1.2f;
@@ -82,8 +90,12 @@ void AimerImage::windowThread() {
 
     ImGui_ImplGlfw_InitForOpenGL(window_, true);
     ImGui_ImplOpenGL3_Init(glsl);
+    render_lock.unlock();
 
     while (running_ && !glfwWindowShouldClose(window_)) {
+        render_lock.lock();
+        glfwMakeContextCurrent(window_);
+        ImGui::SetCurrentContext(imgui_context_);
         glfwPollEvents();
 
         ImGui_ImplOpenGL3_NewFrame();
@@ -91,11 +103,13 @@ void AimerImage::windowThread() {
         ImGui::NewFrame();
 
         // ---- 图像窗口 UI ----
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
         ImGui::SetNextWindowPos(ImVec2(0, 0));
         ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
         ImGui::Begin(name_.c_str(), nullptr,
                      ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
-                     ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse);
+                     ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse |
+                     ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
         cv::Mat local;
         {
@@ -106,6 +120,11 @@ void AimerImage::windowThread() {
         }
 
         if (!local.empty()) {
+            if (last_image_size_ != local.size()) {
+                last_image_size_ = local.size();
+                glfwSetWindowAspectRatio(window_, std::max(1, local.cols), std::max(1, local.rows));
+                glfwSetWindowSize(window_, std::max(1, local.cols), std::max(1, local.rows));
+            }
             // 创建/更新 OpenGL 纹理
             if (!texture_created_) {
                 glGenTextures(1, &texture_id_);
@@ -148,6 +167,7 @@ void AimerImage::windowThread() {
         }
 
         ImGui::End();
+        ImGui::PopStyleVar();
 
         // ---- 渲染 ----
         ImGui::Render();
@@ -158,19 +178,26 @@ void AimerImage::windowThread() {
         glClear(GL_COLOR_BUFFER_BIT);
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
         glfwSwapBuffers(window_);
+        render_lock.unlock();
     }
 
     // 清理
+    render_lock.lock();
+    glfwMakeContextCurrent(window_);
+    ImGui::SetCurrentContext(imgui_context_);
+
     if (texture_created_) {
         glDeleteTextures(1, &texture_id_);
         texture_created_ = false;
     }
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
-    ImGui::DestroyContext();
+    ImGui::DestroyContext(imgui_context_);
+    imgui_context_ = nullptr;
     glfwDestroyWindow(window_);
     window_ = nullptr;
     running_ = false;
+    render_lock.unlock();
 }
 
 } // namespace aim
